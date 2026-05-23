@@ -1,6 +1,7 @@
 import operator
 import asyncio
 import traceback
+import datetime
 from typing import TypedDict, Annotated, Literal
 
 from pydantic import BaseModel
@@ -48,7 +49,7 @@ graph = None
 
 # tokeniser helpers to count tokens
 enc = tiktoken.get_encoding("cl100k_base")
-TOKEN_THRESHOLD = 30_000
+TOKEN_THRESHOLD = 15_000
 
 # Number of recent conversational "units" we try to preserve fresh.
 # Actual preserved count may be slightly larger because we keep
@@ -216,15 +217,37 @@ async def initialize_agent():
             )
         ])
 
+        # ── Populate approval logs ─────────────────────────────
+        approval_entry = {
+            "tool_name": tool_call["name"],
+            "args": tool_call["args"],
+            "user_reply": user_reply,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        intent_entry = {
+            "tool_name": tool_call["name"],
+            "intent": intent_result.intent,
+            "refined_instruction": intent_result.refined_instruction
+        }
+
         if intent_result.intent == "yes":
-            return {"messages": []}
+            return {
+                "messages": [],
+                "approval_log": [approval_entry],
+                "intent_log": [intent_entry]
+            }
 
         content = (
             f"Tool call rejected by user. Reason: {user_reply}"
             if intent_result.intent == "no"
             else f"Tool call not executed. User wants changes: {intent_result.refined_instruction}"
         )
-        return {"messages": [ToolMessage(tool_call_id=tool_call["id"], content=content)]}
+        return {
+            "messages": [ToolMessage(tool_call_id=tool_call["id"], content=content)],
+            "approval_log": [approval_entry],
+            "intent_log": [intent_entry]
+        }
 
 
     async def tool_executor_node(state: AgentState) -> AgentState:
@@ -237,10 +260,36 @@ async def initialize_agent():
         tool = tool_map.get(tool_call["name"])
 
         if not tool:
-            return {"messages": [ToolMessage(
-                tool_call_id=tool_call["id"],
-                content=f"Tool '{tool_call['name']}' not found. The connector may not be loaded."
-            )]}
+            timestamp = datetime.utcnow().isoformat()
+            error_entry = {
+                "tool_name": tool_call["name"],
+                "args": tool_call["args"],
+                "error": "Tool not found",
+                "timestamp": timestamp
+            }
+            tool_call_entry = {
+                "tool_name": tool_call["name"],
+                "args": tool_call["args"],
+                "status": "not_found",
+                "timestamp": timestamp
+            }
+
+            return {
+                "messages": [ToolMessage(
+                    tool_call_id=tool_call["id"],
+                    content=f"Tool '{tool_call['name']}' not found. The connector may not be loaded."
+                )],
+                "tool_call_log": [tool_call_entry],
+                "tool_error_log": [error_entry]
+            }
+
+        # ── Base tool execution log ────────────────────────────
+        tool_call_entry = {
+            "tool_name": tool_call["name"],
+            "args": tool_call["args"],
+            "status": "pending",
+            "timestamp": datetime.utcnow().isoformat()
+        }
 
         try:
             # BEFORE EXECUTION
@@ -252,21 +301,42 @@ async def initialize_agent():
             # AFTER EXECUTION
             print(f"✅ Tool result: {str(result)[:500]}\n")
 
-            return {"messages": [ToolMessage(
-                tool_call_id=tool_call["id"],
-                content=str(result)
-            )]} 
+            tool_call_entry["status"] = "success"
+            tool_call_entry["result"] = str(result)[:500]
+
+            return {
+                "messages": [
+                    ToolMessage(
+                        tool_call_id=tool_call["id"],
+                        content=str(result)
+                    )
+                ],
+                "tool_call_log": [tool_call_entry]
+            } 
 
         except Exception as e:
             traceback.print_exc()
 
-            return {"messages": [ToolMessage(
-                tool_call_id=tool_call["id"],
-                content=(
-                    "Tool execution failed.\n"
-                    f"Error: {str(e)}"
-                )
-            )]}
+            tool_call_entry["status"] = "failed"
+            tool_call_entry["error"] = str(e)
+
+            error_entry = {
+                "tool_name": tool_call["name"],
+                "args": tool_call["args"],
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+            return {
+                "messages": [
+                    ToolMessage(
+                        tool_call_id=tool_call["id"],
+                        content=f"Tool execution failed.\nError: {str(e)}"
+                    )
+                ],
+                "tool_call_log": [tool_call_entry],
+                "tool_error_log": [error_entry]
+            }
         
 
     # ─────────────────────────────────────────────────────────
@@ -373,15 +443,24 @@ async def send(message: str, thread_id: str):
 
 
 def count_tokens(messages) -> int:
-
     total = 0
-
     for msg in messages:
-
+        # Count content
         content = getattr(msg, "content", "")
-
         if isinstance(content, str):
             total += len(enc.encode(content))
+        elif isinstance(content, list):
+            # Some tool results come back as list of content blocks
+            for block in content:
+                if isinstance(block, dict) and "text" in block:
+                    total += len(enc.encode(block["text"]))
+
+        # Count tool call payloads (missed entirely before)
+        tool_calls = getattr(msg, "tool_calls", None)
+        if tool_calls:
+            for tc in tool_calls:
+                tc_text = f"{tc.get('name', '')} {str(tc.get('args', ''))}"
+                total += len(enc.encode(tc_text))
 
     return total
 
