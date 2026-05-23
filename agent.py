@@ -1,7 +1,7 @@
 import operator
 import asyncio
 import traceback
-import datetime
+from datetime import datetime
 from typing import TypedDict, Annotated, Literal
 
 from pydantic import BaseModel
@@ -383,7 +383,7 @@ async def initialize_agent():
 
 
 # Send message
-async def send(message: str, thread_id: str):
+async def send(message: str, thread_id: str, status_callback=None):
 
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -401,14 +401,18 @@ async def send(message: str, thread_id: str):
         # AUTO RESUME DETECTION
         if is_interrupted:
             print(f"↩️ Resuming: {message}")
-            await graph.ainvoke(Command(resume=message), config)
+            async for event in graph.astream_events(Command(resume=message), config, version="v2"):
+                if event["event"] == "on_tool_start" and status_callback:
+                    await status_callback(event.get("name", ""))
             log_latest_message(config)
         else:
             print(f"👤 User: {message}")
-            await graph.ainvoke({"messages": [HumanMessage(content=message)]}, config)
+            async for event in graph.astream_events({"messages": [HumanMessage(content=message)]}, config, version="v2"):
+                if event["event"] == "on_tool_start" and status_callback:
+                    await status_callback(event.get("name", ""))
             log_latest_message(config)
-    except Exception as e:
 
+    except Exception as e:
         print(f"❌ Graph execution failed: {e}")
 
         # IMPORTANT: Reset corrupted thread state by starting fresh

@@ -31,6 +31,50 @@ _oauth_code_future = None
 
 # Session Management
 IDLE_MINUTES = 5
+TOOL_LABELS = {
+    # ── Instamart: Discover ──────────────────────────────────
+    "search_products":    "🔍 Searching for products...",
+    "your_go_to_items":   "⭐ Fetching your go-to items...",
+    "get_addresses":      "📍 Fetching your saved addresses...",
+    "create_address":     "📍 Saving new address...",
+    "delete_address":     "🗑️ Deleting address...",
+
+    # ── Instamart: Cart ──────────────────────────────────────
+    "get_cart":           "🛒 Fetching your cart...",
+    "update_cart":        "🛒 Updating your cart...",
+    "clear_cart":         "🗑️ Clearing your cart...",
+
+    # ── Instamart: Order ─────────────────────────────────────
+    "checkout":           "📦 Placing your order...",
+
+    # ── Instamart: Track ─────────────────────────────────────
+    "get_orders":         "📋 Fetching your order history...",
+    "get_order_details":  "🔎 Getting order details...",
+    "track_order":        "🚴 Tracking your order...",
+
+    # ── Instamart: Support ───────────────────────────────────
+    "report_error":       "📝 Generating error report...",
+
+    # ── Food: Discover ───────────────────────────────────────
+    "search_restaurants": "🔍 Searching restaurants...",
+    "search_menu":        "🍽️ Searching the menu...",
+    "get_restaurant_menu":"🍽️ Fetching restaurant menu...",
+
+    # ── Food: Cart ───────────────────────────────────────────
+    "get_food_cart":      "🛒 Fetching your food cart...",
+    "update_food_cart":   "🛒 Updating your food cart...",
+    "flush_food_cart":    "🗑️ Clearing your food cart...",
+    "fetch_food_coupons": "🎟️ Finding available coupons...",
+    "apply_food_coupon":  "🎟️ Applying coupon...",
+
+    # ── Food: Order ──────────────────────────────────────────
+    "place_food_order":   "📦 Placing your food order...",
+
+    # ── Food: Track ──────────────────────────────────────────
+    "get_food_orders":    "📋 Fetching your food orders...",
+    "get_food_order_details": "🔎 Getting order details...",
+    "track_food_order":   "🚴 Tracking your food order...",
+}
 
 @dataclass
 class UserSession:
@@ -183,9 +227,26 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         flush=True
     )
 
+    # ── Sending the user meaning and helper messages before final response ────
+    thinking_msg = await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="⏳ Thinking..."
+    )
+
+    async def status_callback(tool_name: str):
+        label = TOOL_LABELS.get(tool_name, f"🔧 Running {tool_name}...")
+        try:
+            await context.bot.edit_message_text(
+                chat_id=update.effective_chat.id,
+                message_id=thinking_msg.message_id,
+                text=label
+            )
+        except Exception:
+            pass
+
     # ── Send to LangGraph ─────────────────────────────────────────────────────
     try:
-        result = await send(text, session_id)
+        result = await send(text, session_id, status_callback=status_callback)
 
         if result["interrupt"]:
             await context.bot.send_message(
@@ -204,6 +265,15 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             chat_id=update.effective_chat.id,
             text="Something went wrong. Please try again."
         )
+
+    finally:
+        try:
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=thinking_msg.message_id
+            )
+        except Exception:
+            pass
 
 # ──────────────────────────────────────────────────────────────────────────────
 # TELEGRAM COMMANDS EXECUTORS
