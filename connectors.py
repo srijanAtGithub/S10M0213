@@ -24,8 +24,9 @@ async def load_swiggy_tools(tool_manager):
     food_tools = await food_client.get_tools()
     im_tools   = await instamart_client.get_tools()
 
-    await tool_manager.register(food_tools,  "swiggy-food",      ["food", "restaurant", "order", "cart", "delivery"])
-    await tool_manager.register(im_tools,    "swiggy-instamart", ["grocery", "instamart", "instant", "cart", "delivery"])
+    await tool_manager.register(food_tools, "swiggy-food")
+    await tool_manager.register(im_tools, "swiggy-instamart")
+
 
 # Registry of all available connectors — add new ones here
 CONNECTORS = {

@@ -64,8 +64,8 @@ async def initialize_agent():
     global graph
 
     # main_llm = ChatOpenAI(model="gpt-5.4-mini").bind_tools(tools, parallel_tool_calls=False)
-    safety_llm = ChatOpenAI(model="gpt-5.4-nano").with_structured_output(SafetyResult)
-    intent_llm = ChatOpenAI(model="gpt-5.4-nano").with_structured_output(IntentResult)
+    safety_llm = ChatOpenAI(model="gpt-5.4-nano").with_structured_output(SafetyResult, include_raw=False)
+    intent_llm = ChatOpenAI(model="gpt-5.4-nano").with_structured_output(IntentResult, include_raw=False)
     summarizer_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
 
     # ─────────────────────────────────────────────────────────
@@ -95,28 +95,27 @@ async def initialize_agent():
 
         MAIN_LLM_SOUL = get_system_message("main_llm")
 
-        # ── Richer retrieval context ──────────────────────────────────────
-        # Use last 4 messages instead of just the final human message.
-        # This carries domain context across multi-turn conversations,
-        # so "add to cart" on turn 6 still knows we're in Instamart.
-        recent_messages = state["messages"][-4:]
+        # ── Two-stage tool retrieval ──────────────────────────────────────
+        # Stage 1: router LLM picks which servers are needed
+        # Stage 2: within-server embedding filter picks top tools per server
         retrieval_context = " ".join(
             m.content
-            for m in recent_messages
+            for m in state["messages"][-8:]
             if isinstance(m, (HumanMessage, AIMessage)) and isinstance(m.content, str)
         )
 
-        # Dynamically infer which server domain is active
-        hint_tags = tool_manager.infer_hint_tags(state["messages"])
-
-        relevant_tools = await tool_manager.get_relevant_tools(
+        relevant_servers = await tool_manager.get_relevant_servers(state["messages"])
+        relevant_tools   = await tool_manager.get_tools_for_servers(
+            servers=relevant_servers,
             query=retrieval_context,
-            top_k=10,
-            always_include=["get_user_profile", "get_saved_addresses"],
-            hint_tags=hint_tags,
+            top_k_per_server=12,
         )
 
-        # Rebind — this is just .bind_tools(), it's a cheap local operation
+        # Fallback: conversational message or router returned nothing
+        if not relevant_tools:
+            relevant_tools = tool_manager.all_tools
+
+        # Rebind with the new tools
         main_llm = ChatOpenAI(model="gpt-5.4-mini").bind_tools(relevant_tools, parallel_tool_calls=False)
         try:
             trimmed_messages = await maybe_summarize(state["messages"], summarizer_llm)
@@ -134,6 +133,10 @@ async def initialize_agent():
 
         tool_call = response.tool_calls[0]
         tool_name  = tool_call["name"]
+
+        tool_map  = {e.tool.name: e.tool for e in tool_manager._registry}
+        tool_obj  = tool_map.get(tool_name)
+        tool_desc = tool_obj.description if tool_obj else "No description available"
 
         # ── Safety fast-path ─────────────────────────────────────────────
         # Classify by name pattern first. Only call the safety LLM for
@@ -162,8 +165,9 @@ async def initialize_agent():
             safety_result = await safety_llm.ainvoke([
                 SystemMessage(content=SAFETY_LLM_SOUL),
                 HumanMessage(content=(
-                    f"Tool: {tool_call['name']}\n"
-                    f"Args: {tool_call['args']}\n"
+                    f"Tool name: {tool_name}\n"
+                    f"Tool description: {tool_desc}\n"
+                    f"Args being passed: {tool_call['args']}\n\n"
                     "Is this safe to auto-execute without asking the user?"
                 ))
             ])
