@@ -7,6 +7,7 @@ import swiggy_auth
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from datetime import datetime
+import traceback
 
 load_dotenv()
 
@@ -16,7 +17,8 @@ from fastapi import FastAPI
 from telegram import Update, BotCommand
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
-from agent import initialize_agent, send, graph, tool_manager
+import agent as agent_module
+from agent import initialize_agent, send, tool_manager
 from memory_and_context import run_evaluator
 from connectors import CONNECTORS
 
@@ -119,7 +121,14 @@ async def expire_session_after_timeout(user_id: str, thread_id: str, user_name: 
     try:
         # ── Fetch full message history from LangGraph ─────────────────────────
         config = {"configurable": {"thread_id": thread_id}}
-        state  = graph.get_state(config)
+
+        # Accessing the live graph via the module, not the stale imported None
+        current_graph = agent_module.graph
+        if current_graph is None:
+            print("⚠️  Graph not yet initialized — skipping evaluator.")
+            return
+
+        state = current_graph.get_state(config)
         messages = state.values.get("messages", [])
 
         if messages:
@@ -142,6 +151,7 @@ async def expire_session_after_timeout(user_id: str, thread_id: str, user_name: 
 
     except Exception as e:
         print(f"❌ Error during session expiry for {user_id}: {e}", flush=True)
+        traceback.print_exc()  
 
     finally:
         _sessions.pop(user_id, None)

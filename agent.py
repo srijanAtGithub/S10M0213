@@ -16,7 +16,7 @@ from langchain_core.messages import (SystemMessage, HumanMessage, AIMessage, Too
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-from memory_and_context import get_system_message
+from memory_and_context import get_system_message, get_relevant_preferences
 from tool_manager import ToolManager
 
 # State Class
@@ -104,6 +104,8 @@ async def initialize_agent():
             if isinstance(m, (HumanMessage, AIMessage)) and isinstance(m.content, str)
         )
 
+        user_preferences = await get_relevant_preferences(retrieval_context)
+
         relevant_servers = await tool_manager.get_relevant_servers(state["messages"])
         relevant_tools   = await tool_manager.get_tools_for_servers(
             servers=relevant_servers,
@@ -115,12 +117,24 @@ async def initialize_agent():
         if not relevant_tools:
             relevant_tools = tool_manager.all_tools
 
+        # ── Build system message — inject preferences only if something was retrieved ──
+        if user_preferences:
+            system_content = (
+                MAIN_LLM_SOUL
+                + "\n\n---\n\n"
+                + "# Relevant User Preferences\n\n"
+                + "Apply these when deciding how to respond or what to do next:\n\n"
+                + user_preferences
+            )
+        else:
+            system_content = MAIN_LLM_SOUL
+
         # Rebind with the new tools
         main_llm = ChatOpenAI(model="gpt-5.4-mini").bind_tools(relevant_tools, parallel_tool_calls=False)
         try:
             trimmed_messages = await maybe_summarize(state["messages"], summarizer_llm)
             response = await main_llm.ainvoke([
-                SystemMessage(content=MAIN_LLM_SOUL),
+                SystemMessage(content=system_content),
                 *trimmed_messages
             ])
         except Exception as e:
