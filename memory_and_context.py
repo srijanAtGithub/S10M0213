@@ -2,7 +2,7 @@ import hashlib
 import numpy as np
 from openai import AsyncOpenAI
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from pathlib import Path
 import asyncio
 
@@ -11,7 +11,7 @@ SOUL_DIR = BASE_DIR / "SOULS"
 CONTEXT_DIR = BASE_DIR / "CONTEXT"
 PREFERENCES_FILE = CONTEXT_DIR / "preferences.md"
 
-eval_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
+eval_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 _openai_client = AsyncOpenAI()
 
 _cache_lock = asyncio.Lock()
