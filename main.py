@@ -96,24 +96,27 @@ def format_time(ts: float) -> str:
 async def expire_session_after_timeout(user_id: str, thread_id: str, user_name: str):
 
     try:
-
         await asyncio.sleep(IDLE_MINUTES * 60)
+    except asyncio.CancelledError:
+        print(f"🔄 Session timer reset for user {user_id} ({user_name})")
+        return
 
-        # ── Guard: session might have already been replaced ───────────────────
-        session = _sessions.get(user_id)
+    # ── Guard: session might have already been replaced ───────────────────
+    session = _sessions.get(user_id)
 
-        if session is None or session.thread_id != thread_id:
-            return
+    if session is None or session.thread_id != thread_id:
+        return
 
-        # ── Print expiry header ───────────────────────────────────────────────
-        print(
-            f"\n⏰ SESSION EXPIRED"
-            f"\n👤 User      : {user_name} ({user_id})"
-            f"\n🧵 Thread ID : {thread_id}"
-            f"\n🕒 Started   : {format_time(session.started_at)}"
-            f"\n🕒 Last msg  : {format_time(session.last_interaction_at)}\n"
-        )
+    # ── Print expiry header ───────────────────────────────────────────────
+    print(
+        f"\n⏰ SESSION EXPIRED"
+        f"\n👤 User      : {user_name} ({user_id})"
+        f"\n🧵 Thread ID : {thread_id}"
+        f"\n🕒 Started   : {format_time(session.started_at)}"
+        f"\n🕒 Last msg  : {format_time(session.last_interaction_at)}\n"
+    )
 
+    try:
         # ── Fetch full message history from LangGraph ─────────────────────────
         config = {"configurable": {"thread_id": thread_id}}
         state  = graph.get_state(config)
@@ -137,13 +140,12 @@ async def expire_session_after_timeout(user_id: str, thread_id: str, user_name: 
         # ── Run evaluator on session messages ─────────────────────────────────
         await run_evaluator(thread_id, messages)
 
-        # ── Clean up ──────────────────────────────────────────────────────────
-        del _sessions[user_id]
-        print("🗑️  Session removed from store.\n")
+    except Exception as e:
+        print(f"❌ Error during session expiry for {user_id}: {e}", flush=True)
 
-    except asyncio.CancelledError:
-        # Normal — user sent a new message, timer was reset
-        print(f"🔄 Session timer reset for user {user_id} ({user_name})")
+    finally:
+        _sessions.pop(user_id, None)
+        print("🗑️  Session removed from store.\n")
 
 
 # Session store logic
