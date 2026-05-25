@@ -33,6 +33,8 @@ _oauth_code_future = None
 
 # Session Management
 IDLE_MINUTES = 5
+GRACEFUL_DRAIN_TIMEOUT = 10  # seconds to wait for in-flight tasks before force-cancel
+
 TOOL_LABELS = {
     # ── Instamart: Discover ──────────────────────────────────
     "search_products":    "🔍 Searching for products...",
@@ -82,9 +84,16 @@ TOOL_LABELS = {
 class UserSession:
     thread_id: str
     user_name: str
+    chat_id: int | None = field(default=None)
+
     started_at: float           = field(default_factory=time.time)
     last_interaction_at: float  = field(default_factory=time.time)
     expiry_task: asyncio.Task | None = field(default=None, repr=False)
+
+    # ── Concurrency control ───────────────────────────────────
+    is_processing: bool                 = field(default=False)
+    cancel_requested: bool              = field(default=False)
+    active_task: asyncio.Task | None    = field(default=None, repr=False)
 
 
 # key = telegram user_id (str)
@@ -202,12 +211,30 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user      = update.effective_user
     user_id   = str(user.id)
     user_name = user.first_name
-
     text      = update.message.text or ""
 
     # ── Session: get or create ────────────────────────────────────────────────
     session_id, is_new_session = get_or_create_session(user_id, user_name)
     session = _sessions[user_id]
+    session.chat_id = update.effective_chat.id
+
+    # ── REJECT-WHILE-BUSY ─────────────────────────────────────────────────────
+    # If a response is already being generated for this user, don't start
+    # another LangGraph run. Tell them to wait or use /stop.
+    if session.is_processing:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=(
+                "⏳ I'm still working on your previous message.\n\n"
+                "Please wait for it to finish — or send /stop if you'd like to cancel it."
+            )
+        )
+        return
+
+    # ── Reset cancel flag from any previous /stop ─────────────────────────────
+    # Must happen before we set is_processing, so a stale cancel_requested
+    # from a prior session doesn't immediately abort this new request.
+    session.cancel_requested = False
 
     if is_new_session:
         # First message — start the expiry countdown
@@ -239,6 +266,9 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         flush=True
     )
 
+    # ── Mark busy ─────────────────────────────────────────────────────────────
+    session.is_processing = True
+
     # ── Sending the user meaning and helper messages before final response ────
     thinking_msg = await context.bot.send_message(
         chat_id=update.effective_chat.id,
@@ -256,29 +286,53 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             pass
 
+    # ── Wrap send() in a Task so /stop can cancel it ──────────────────────────
+    async def _run_send():
+        return await send(
+            text,
+            session_id,
+            status_callback=status_callback,
+            cancel_check=lambda: session.cancel_requested,
+        )
+ 
+    task = asyncio.create_task(_run_send())
+    session.active_task = task
+
     # ── Send to LangGraph ─────────────────────────────────────────────────────
     try:
-        result = await send(text, session_id, status_callback=status_callback)
+        result = await task
 
-        if result["interrupt"]:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=result["interrupt"]
-            )
-        elif result["reply"]:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=result["reply"]
-            )
+        # Task completed normally — only reply if not cancelled.
+        # (If cancel was requested mid-run, send() returns None result;
+        #  we just silently drop it per spec.)
+        if not session.cancel_requested:
+            if result["interrupt"]:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=result["interrupt"]
+                )
+            elif result["reply"]:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=result["reply"]
+                )
+    except asyncio.CancelledError:
+        # /stop fired — task was cancelled externally. Say nothing. Do nothing.
+        print(f"🛑 Task cancelled for user {user_name} ({user_id})")
 
     except Exception as e:
         print(f"❌ Error in send(): {e}", flush=True)
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text="Something went wrong. Please try again."
-        )
+        if not session.cancel_requested:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Something went wrong. Please try again."
+            )
 
     finally:
+        # clearing processing state, regardless of how we got here.
+        session.is_processing = False
+        session.active_task = None
+
         try:
             await context.bot.delete_message(
                 chat_id=update.effective_chat.id,
@@ -292,7 +346,35 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 # ──────────────────────────────────────────────────────────────────────────────
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Hello! I'm Maple. How can I help?")
+    await update.message.reply_text("Hello! I'm S10M0213.")
+
+
+async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Cancel whatever is currently processing for this user.
+    No reply to the user — just stop everything silently.
+    """
+    user_id = str(update.effective_user.id)
+    session = _sessions.get(user_id)
+ 
+    if session is None or not session.is_processing:
+        # Nothing running — silently do nothing.
+        return
+ 
+    print(
+        f"\n🛑 /stop received"
+        f"\n👤 User : {session.user_name} ({user_id})"
+        f"\n🧵 Thread: {session.thread_id}\n"
+    )
+ 
+    # Signal the cancel_check lambda inside send()
+    session.cancel_requested = True
+ 
+    # Cancel the asyncio Task wrapping send()
+    if session.active_task and not session.active_task.done():
+        session.active_task.cancel()
+ 
+    # No reply, no acknowledgement — per spec.
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -302,7 +384,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"🧵 Session ID: {session.thread_id[:8]}...\n"
             f"🕒 Started: {format_time(session.started_at)}\n"
-            f"💬 Last msg: {format_time(session.last_interaction_at)}"
+            f"💬 Last msg: {format_time(session.last_interaction_at)}\n"
+            f"⚙️  Processing: {'Yes' if session.is_processing else 'No'}"
         )
     else:
         await update.message.reply_text("No active session.")
@@ -352,10 +435,11 @@ async def lifespan(app: FastAPI):
     telegram_app = Application.builder().token(TOKEN).build()
 
     telegram_app.add_handler(CommandHandler("start", start_command))
+    telegram_app.add_handler(CommandHandler("stop", stop_command))
     telegram_app.add_handler(CommandHandler("status", status_command))
-    telegram_app.add_handler(CommandHandler("connectors",       connectors_command))
+    telegram_app.add_handler(CommandHandler("connectors", connectors_command))
     telegram_app.add_handler(CommandHandler("loaded_connectors", loaded_connectors_command))
-    telegram_app.add_handler(CommandHandler("connect_swiggy",    connect_swiggy_command))
+    telegram_app.add_handler(CommandHandler("connect_swiggy", connect_swiggy_command))
     telegram_app.add_handler(CommandHandler("disconnect_swiggy", disconnect_swiggy_command))
 
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_telegram_message))
@@ -364,6 +448,7 @@ async def lifespan(app: FastAPI):
     await telegram_app.start()
     await telegram_app.bot.set_my_commands([
         BotCommand("start",             "Start the bot"),
+        BotCommand("stop",              "Stop the current process"),
         BotCommand("status",            "Show your session info"),
         BotCommand("connectors",        "Show available connectors"),
         BotCommand("loaded_connectors", "Show currently loaded connectors"),
@@ -378,6 +463,60 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(initialize_agent())
 
     yield
+
+    # ── Graceful drain on shutdown ────────────────────────────────────────────
+    # 1. Notify every user who is mid-process.
+    # 2. Give in-flight tasks up to GRACEFUL_DRAIN_TIMEOUT seconds to finish.
+    # 3. Force-cancel anything still running after the timeout.
+ 
+    processing_sessions = [
+        (uid, s) for uid, s in _sessions.items() if s.is_processing
+    ]
+ 
+    if processing_sessions:
+        print(f"\n⚠️  Shutdown: {len(processing_sessions)} active session(s) in progress. Notifying users...")
+ 
+        notify_tasks = []
+        for uid, session in processing_sessions:
+            # Best-effort notification — if Telegram is also down this will just fail silently.
+            async def _notify(s=session):
+                try:
+                    # We need the chat_id for this user. We track active_chat_id globally
+                    # (last active), but for a multi-user bot we need per-user chat ids.
+                    # For now we use active_chat_id as a best effort; see note below.
+                    if active_chat_id:
+                        await telegram_app.bot.send_message(
+                            chat_id=s.chat_id,
+                            text=(
+                                "⚠️ It looks like our connection was interrupted.\n\n"
+                                "I wasn't able to finish processing your request. "
+                                "Please try again in a moment — I'll be right back."
+                            )
+                        )
+                except Exception as e:
+                    print(f"⚠️  Could not notify user {s.user_name}: {e}")
+ 
+            notify_tasks.append(asyncio.create_task(_notify()))
+ 
+        # Wait for all notifications to go out before cancelling tasks
+        await asyncio.gather(*notify_tasks, return_exceptions=True)
+ 
+        # Collect active tasks to drain
+        active_tasks = [
+            s.active_task
+            for _, s in processing_sessions
+            if s.active_task and not s.active_task.done()
+        ]
+ 
+        if active_tasks:
+            print(f"⏳ Waiting up to {GRACEFUL_DRAIN_TIMEOUT}s for {len(active_tasks)} task(s)...")
+            _, pending = await asyncio.wait(active_tasks, timeout=GRACEFUL_DRAIN_TIMEOUT)
+ 
+            if pending:
+                print(f"🔨 Force-cancelling {len(pending)} task(s) that did not finish in time.")
+                for t in pending:
+                    t.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
 
     # ── Cleanup: cancel all pending expiry tasks on shutdown ──────────────────
     for uid, session in _sessions.items():
