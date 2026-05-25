@@ -13,11 +13,9 @@ from langgraph.checkpoint.memory import MemorySaver
 import tiktoken
 from langchain_core.messages import (SystemMessage, HumanMessage, AIMessage, ToolMessage)
 
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
-
 from memory_and_context import get_system_message, get_relevant_preferences
 from tool_manager import ToolManager
+import configuration
 
 # State Class
 class AgentState(TypedDict):
@@ -63,10 +61,9 @@ async def initialize_agent():
 
     global graph
 
-    # main_llm = ChatOpenAI(model="gpt-5.4-mini").bind_tools(tools, parallel_tool_calls=False)
-    safety_llm = ChatOpenAI(model="gpt-5.4-nano").with_structured_output(SafetyResult, include_raw=False)
-    intent_llm = ChatOpenAI(model="gpt-5.4-nano").with_structured_output(IntentResult, include_raw=False)
-    summarizer_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
+    safety_llm = configuration.get_safety_llm(SafetyResult)
+    intent_llm = configuration.get_intent_llm(IntentResult)
+    summarizer_llm = configuration.get_summarizer_llm()
 
     # ─────────────────────────────────────────────────────────
     # Nodes
@@ -130,7 +127,7 @@ async def initialize_agent():
             system_content = MAIN_LLM_SOUL
 
         # Rebind with the new tools
-        main_llm = ChatOpenAI(model="gpt-5.4-mini").bind_tools(relevant_tools, parallel_tool_calls=False)
+        main_llm = configuration.get_main_llm(tools=relevant_tools)
         try:
             trimmed_messages = await maybe_summarize(state["messages"], summarizer_llm)
             response = await main_llm.ainvoke([

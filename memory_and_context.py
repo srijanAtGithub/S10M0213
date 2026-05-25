@@ -2,16 +2,16 @@ import hashlib
 import numpy as np
 from openai import AsyncOpenAI
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
 from pathlib import Path
 import asyncio
+import configuration
 
 BASE_DIR = Path(__file__).resolve().parent
 SOUL_DIR = BASE_DIR / "SOULS"
 CONTEXT_DIR = BASE_DIR / "CONTEXT"
 PREFERENCES_FILE = CONTEXT_DIR / "preferences.md"
 
-eval_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+eval_llm = configuration.get_eval_llm()
 _openai_client = AsyncOpenAI()
 
 _cache_lock = asyncio.Lock()
