@@ -398,11 +398,13 @@ async def initialize_agent():
 
 
 # Send message
-async def send(message: str, thread_id: str, status_callback=None):
+async def send(message: str, thread_id: str, status_callback=None, cancel_check=None):
 
     config = {"configurable": {"thread_id": thread_id}}
-
     print(f"─── Thread: {thread_id} ───")
+
+    if cancel_check and cancel_check():
+        return {"reply": None, "interrupt": None}
 
     try:
         state = graph.get_state(config)
@@ -412,6 +414,9 @@ async def send(message: str, thread_id: str, status_callback=None):
             and bool(state.tasks)
             and bool(state.tasks[0].interrupts)
         )
+
+        if cancel_check and cancel_check():
+            return {"reply": None, "interrupt": None}
 
         # AUTO RESUME DETECTION
         if is_interrupted:
@@ -426,6 +431,9 @@ async def send(message: str, thread_id: str, status_callback=None):
                 if event["event"] == "on_tool_start" and status_callback:
                     await status_callback(event.get("name", ""))
             log_latest_message(config)
+
+        if cancel_check and cancel_check():
+            return {"reply": None, "interrupt": None}
 
     except Exception as e:
         print(f"❌ Graph execution failed: {e}")

@@ -432,7 +432,7 @@ async def loaded_connectors_command(update: Update, context: ContextTypes.DEFAUL
 async def lifespan(app: FastAPI):
     global telegram_app
 
-    telegram_app = Application.builder().token(TOKEN).build()
+    telegram_app = Application.builder().token(TOKEN).concurrent_updates(True).build()
 
     telegram_app.add_handler(CommandHandler("start", start_command))
     telegram_app.add_handler(CommandHandler("stop", stop_command))
