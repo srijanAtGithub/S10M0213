@@ -1,0 +1,32 @@
+tasks:
+
+  - id: morning_news
+    enabled: true
+    task: "Summarize the top AI news headlines"
+    schedule:
+      mode: daily
+      at: "08:00"
+      days: [mon, tue, wed, thu, fri]
+
+  - id: email_check
+    enabled: true
+    task: "Check unread emails and notify if anything important arrives"
+    schedule:
+      mode: interval
+      every: 30m
+      days: [mon, tue, wed]
+
+  - id: server_health
+    enabled: true
+    task: "Monitor server CPU and memory usage"
+    schedule:
+      mode: interval
+      every: 2h
+      start: "09:00"
+
+  - id: disabled_task
+    enabled: false
+    task: "Generate a weekly expense summary"
+    schedule:
+      mode: daily
+      at: "21:00"
