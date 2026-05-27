@@ -20,6 +20,7 @@ from telegram.ext import Application, MessageHandler, CommandHandler, filters, C
 import agent as agent_module
 from agent import initialize_agent, send, tool_manager
 from memory_and_context import run_evaluator
+from RECURRING_TASKS.recurring_tasks import start_recurring_tasks
 from connectors import CONNECTORS
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -461,6 +462,7 @@ async def lifespan(app: FastAPI):
 
     # Do NOT await this here, or startup deadlocks.
     asyncio.create_task(initialize_agent())
+    asyncio.create_task(start_recurring_tasks())
 
     yield
 
