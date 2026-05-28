@@ -7,6 +7,12 @@ from datetime import datetime, timedelta
 
 YAML_FILE = Path(__file__).resolve().parent / "recurring_tasks.yaml"
 
+_dispatch = None
+
+def set_dispatch(fn):
+    global _dispatch
+    _dispatch = fn
+
 VALID_DAYS = {
     "mon", "tue", "wed", "thu", "fri", "sat", "sun"
 }
@@ -156,7 +162,7 @@ async def task_runner(task_config):
             await asyncio.sleep(wait_seconds)
 
             if should_run_today(schedule):
-                execute_task(task_id, task_text)
+                await execute_task(task_id, task_text)
 
         # INTERVAL MODE
         elif mode == "interval":
@@ -170,7 +176,7 @@ async def task_runner(task_config):
                     await asyncio.sleep(wait_seconds)
 
             if should_run_today(schedule):
-                execute_task(task_id, task_text)
+                await execute_task(task_id, task_text)
 
             interval_seconds = parse_interval(schedule["every"])
 
@@ -178,7 +184,7 @@ async def task_runner(task_config):
 
 
 # HELPERS
-def execute_task(task_id, task_text):
+async def execute_task(task_id, task_text):
 
     print(
         f"\n🔁 TASK EXECUTED"
@@ -187,6 +193,12 @@ def execute_task(task_id, task_text):
         f"\n🕒 Time : {datetime.now()}\n",
         flush=True
     )
+
+    if _dispatch is None:
+        print(f"⚠️  No dispatch set — skipping task {task_id}")
+        return
+
+    await _dispatch(task_id, task_text)
 
 
 def build_today_datetime(time_str):

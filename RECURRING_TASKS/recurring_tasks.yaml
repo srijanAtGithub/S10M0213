@@ -1,7 +1,7 @@
 tasks:
 
   - id: morning_news
-    enabled: true
+    enabled: false
     task: "Summarize the top AI news headlines"
     schedule:
       mode: daily
@@ -9,7 +9,7 @@ tasks:
       days: [mon, tue, wed, thu, fri]
 
   - id: email_check
-    enabled: true
+    enabled: false
     task: "Check unread emails and notify if anything important arrives"
     schedule:
       mode: interval
@@ -17,7 +17,7 @@ tasks:
       days: [mon, tue, wed]
 
   - id: server_health
-    enabled: true
+    enabled: false
     task: "Monitor server CPU and memory usage"
     schedule:
       mode: interval
