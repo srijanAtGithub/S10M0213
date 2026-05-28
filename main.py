@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from datetime import datetime
 import traceback
+import json
+from pathlib import Path
 
 load_dotenv()
 
@@ -20,9 +22,11 @@ from telegram.ext import Application, MessageHandler, CommandHandler, filters, C
 import agent as agent_module
 from agent import initialize_agent, send, tool_manager
 from memory_and_context import run_evaluator
+from RECURRING_TASKS.recurring_tasks import start_recurring_tasks, set_dispatch
 from connectors import CONNECTORS
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+CHAT_ID_FILE = Path(".chat_id")
 
 # Telegram globals
 active_chat_id: int | None = None
@@ -204,7 +208,6 @@ def get_or_create_session(user_id: str, user_name: str) -> tuple[str, bool]:
 # Telegram handler
 # ──────────────────────────────────────────────────────────────────────────────
 async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global active_chat_id
 
     active_chat_id = update.effective_chat.id
 
@@ -346,7 +349,18 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 # ──────────────────────────────────────────────────────────────────────────────
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! I'm S10M0213.")
+    global active_chat_id
+
+    active_chat_id = update.effective_chat.id
+
+    if not CHAT_ID_FILE.exists():
+        CHAT_ID_FILE.write_text(json.dumps({"chat_id": active_chat_id}))
+        print(f"💾 Registered chat_id: {active_chat_id} for user {update.effective_user.first_name}")
+        await update.message.reply_text(
+            "👋 Hi! I'm S10M0213. You're all set up.."
+        )
+    else:
+        await update.message.reply_text("👋 Hey! Already registered. Ready to go.")
 
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -428,9 +442,54 @@ async def loaded_connectors_command(update: Update, context: ContextTypes.DEFAUL
 # ──────────────────────────────────────────────────────────────────────────────
 # FastAPI lifespan
 # ──────────────────────────────────────────────────────────────────────────────
+def load_persisted_chat_id() -> int | None:
+    try:
+        return json.loads(CHAT_ID_FILE.read_text())["chat_id"]
+    except Exception:
+        return None
+    
+async def dispatch_recurring_task(task_id: str, task_text: str):
+    thread_id = str(uuid.uuid4())
+
+    print(
+        f"\n⏰ RECURRING TASK DISPATCH"
+        f"\n🆔 Task      : {task_id}"
+        f"\n🧵 Thread ID : {thread_id}\n",
+        flush=True
+    )
+
+    try:
+        result = await send(task_text, thread_id)
+    except Exception as e:
+        print(f"❌ Recurring task agent error [{task_id}]: {e}", flush=True)
+        return
+
+    reply = result.get("reply") or result.get("interrupt")
+    if not reply:
+        print(f"⚠️  No reply from agent for task {task_id}")
+        return
+
+    if active_chat_id is None:
+        print(f"⚠️  No active Telegram chat for task {task_id} — reply dropped.")
+        return
+
+    try:
+        await telegram_app.bot.send_message(chat_id=active_chat_id, text=reply)
+        print(f"✉️  Recurring task [{task_id}] reply sent.")
+    except Exception as e:
+        print(f"❌ Failed to send recurring task reply [{task_id}]: {e}", flush=True)
+    
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global telegram_app
+    global active_chat_id
+
+    saved = load_persisted_chat_id()
+    if saved:
+        active_chat_id = saved
+        print(f"📌 Loaded persisted chat_id: {active_chat_id}")
+    else:
+        print("⚠️  No chat_id yet — user must send /start first.")
 
     telegram_app = Application.builder().token(TOKEN).concurrent_updates(True).build()
 
@@ -459,8 +518,11 @@ async def lifespan(app: FastAPI):
 
     print("🤖 Telegram bot is running...")
 
+    set_dispatch(dispatch_recurring_task)
+
     # Do NOT await this here, or startup deadlocks.
     asyncio.create_task(initialize_agent())
+    asyncio.create_task(start_recurring_tasks())
 
     yield
 
