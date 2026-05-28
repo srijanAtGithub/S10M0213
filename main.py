@@ -86,7 +86,7 @@ TOOL_LABELS = {
 
 @dataclass
 class UserSession:
-    thread_id: str
+    session_id: str
     user_name: str
     chat_id: int | None = field(default=None)
 
@@ -108,7 +108,7 @@ def format_time(ts: float) -> str:
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
 
-async def expire_session_after_timeout(user_id: str, thread_id: str, user_name: str):
+async def expire_session_after_timeout(user_id: str, session_id: str, user_name: str):
 
     try:
         await asyncio.sleep(IDLE_MINUTES * 60)
@@ -119,21 +119,21 @@ async def expire_session_after_timeout(user_id: str, thread_id: str, user_name: 
     # ── Guard: session might have already been replaced ───────────────────
     session = _sessions.get(user_id)
 
-    if session is None or session.thread_id != thread_id:
+    if session is None or session.session_id != session_id:
         return
 
     # ── Print expiry header ───────────────────────────────────────────────
     print(
         f"\n⏰ SESSION EXPIRED"
         f"\n👤 User      : {user_name} ({user_id})"
-        f"\n🧵 Thread ID : {thread_id}"
+        f"\n🧵 Session ID : {session_id}"
         f"\n🕒 Started   : {format_time(session.started_at)}"
         f"\n🕒 Last msg  : {format_time(session.last_interaction_at)}\n"
     )
 
     try:
         # ── Fetch full message history from LangGraph ─────────────────────────
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {"configurable": {"thread_id": session_id}} # "thread_id" inside configurable is LangGraph's internal contract
 
         # Accessing the live graph via the module, not the stale imported None
         current_graph = agent_module.graph
@@ -160,7 +160,7 @@ async def expire_session_after_timeout(user_id: str, thread_id: str, user_name: 
             print("📜 No messages in this session.\n")
 
         # ── Run evaluator on session messages ─────────────────────────────────
-        await run_evaluator(thread_id, messages)
+        await run_evaluator(session.session_id, messages)
 
     except Exception as e:
         print(f"❌ Error during session expiry for {user_id}: {e}", flush=True)
@@ -172,11 +172,11 @@ async def expire_session_after_timeout(user_id: str, thread_id: str, user_name: 
 
 
 # Session store logic
-# get_or_create_session  →  always returns a valid (thread_id, is_new) pair
+# get_or_create_session  →  always returns a valid (session_id, is_new) pair
 # The expiry task is created/reset here by the async caller (on_telegram_message)
 def get_or_create_session(user_id: str, user_name: str) -> tuple[str, bool]:
     """
-    Returns (thread_id, is_new_session).
+    Returns (session_id, is_new_session).
 
     Does NOT create expiry tasks — that's the async caller's job,
     because create_task must be called from an async context.
@@ -192,16 +192,16 @@ def get_or_create_session(user_id: str, user_name: str) -> tuple[str, bool]:
 
     if existing is None:
         session = UserSession(
-            thread_id=str(uuid.uuid4()),
+            session_id=str(uuid.uuid4()),
             user_name=user_name,
         )
         _sessions[user_id] = session
-        return session.thread_id, True
+        return session.session_id, True
 
     # Session exists — expiry task is already running (or was reset).
     # Update last_interaction_at so the expiry guard can use it for logging.
     existing.last_interaction_at = time.time()
-    return existing.thread_id, False
+    return existing.session_id, False
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -378,7 +378,7 @@ async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(
         f"\n🛑 /stop received"
         f"\n👤 User : {session.user_name} ({user_id})"
-        f"\n🧵 Thread: {session.thread_id}\n"
+        f"\n🧵 Session: {session.session_id}\n"
     )
  
     # Signal the cancel_check lambda inside send()
@@ -396,7 +396,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = _sessions.get(user_id)
     if session:
         await update.message.reply_text(
-            f"🧵 Session ID: {session.thread_id[:8]}...\n"
+            f"🧵 Session ID: {session.session_id[:8]}...\n"
             f"🕒 Started: {format_time(session.started_at)}\n"
             f"💬 Last msg: {format_time(session.last_interaction_at)}\n"
             f"⚙️  Processing: {'Yes' if session.is_processing else 'No'}"
@@ -449,17 +449,17 @@ def load_persisted_chat_id() -> int | None:
         return None
     
 async def dispatch_recurring_task(task_id: str, task_text: str):
-    thread_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
 
     print(
         f"\n⏰ RECURRING TASK DISPATCH"
         f"\n🆔 Task      : {task_id}"
-        f"\n🧵 Thread ID : {thread_id}\n",
+        f"\n🧵 Session ID : {session_id}\n",
         flush=True
     )
 
     try:
-        result = await send(task_text, thread_id)
+        result = await send(task_text, session_id)
     except Exception as e:
         print(f"❌ Recurring task agent error [{task_id}]: {e}", flush=True)
         return
