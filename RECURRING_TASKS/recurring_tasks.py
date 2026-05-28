@@ -1,10 +1,11 @@
 import asyncio
 import re
 import yaml
+from pathlib import Path
 
 from datetime import datetime, timedelta
 
-YAML_FILE = "recurring_tasks.yaml"
+YAML_FILE = Path(__file__).resolve().parent / "recurring_tasks.yaml"
 
 VALID_DAYS = {
     "mon", "tue", "wed", "thu", "fri", "sat", "sun"
