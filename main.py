@@ -421,13 +421,31 @@ async def disconnect_swiggy_command(update: Update, context: ContextTypes.DEFAUL
     await update.message.reply_text("🗑️ Swiggy disconnected. All Swiggy tools unloaded.")
 
 
+async def connect_gmail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loaded = tool_manager.loaded_servers
+    if "gmail" in loaded:
+        await update.message.reply_text("⚠️ Gmail is already connected.")
+        return
+    
+    await update.message.reply_text("⏳ Connecting Gmail...\nBrowser will open for login.")
+    try:
+        await CONNECTORS["gmail"](tool_manager)
+        await update.message.reply_text("✅ Gmail connected successfully!\nYou can now use Gmail tools.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to connect Gmail:\n{str(e)}")
+
+
+async def disconnect_gmail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tool_manager.unregister("gmail")
+    await update.message.reply_text("🗑️ Gmail disconnected.")
+
+
 async def connectors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     available = "\n".join(f"• {name}" for name in CONNECTORS.keys())
 
     await update.message.reply_text(
         f"📦 Available connectors:\n\n"
         f"{available}\n\n"
-        f"Use /connect_swiggy to connect."
     )
 
 
@@ -500,6 +518,8 @@ async def lifespan(app: FastAPI):
     telegram_app.add_handler(CommandHandler("loaded_connectors", loaded_connectors_command))
     telegram_app.add_handler(CommandHandler("connect_swiggy", connect_swiggy_command))
     telegram_app.add_handler(CommandHandler("disconnect_swiggy", disconnect_swiggy_command))
+    telegram_app.add_handler(CommandHandler("connect_gmail", connect_gmail_command))
+    telegram_app.add_handler(CommandHandler("disconnect_gmail", disconnect_gmail_command))
 
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_telegram_message))
 
@@ -513,6 +533,8 @@ async def lifespan(app: FastAPI):
         BotCommand("loaded_connectors", "Show currently loaded connectors"),
         BotCommand("connect_swiggy",    "Connect Swiggy (food + instamart)"),
         BotCommand("disconnect_swiggy", "Disconnect Swiggy tools"),
+        BotCommand("connect_gmail",     "Connect Gmail"),
+        BotCommand("disconnect_gmail",  "Disconnect Gmail"),
     ])
     await telegram_app.updater.start_polling()
 
