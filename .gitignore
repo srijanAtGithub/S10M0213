@@ -17,7 +17,9 @@ google_credentials.json
 gmail_token.json
 gmail_token_*.json
 
+# User specific data
 .chat_id
+DATA/
 
 # Dev folders
 Notes/
