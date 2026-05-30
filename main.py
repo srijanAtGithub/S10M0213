@@ -21,6 +21,7 @@ from telegram.ext import Application, MessageHandler, CommandHandler, filters, C
 
 import agent as agent_module
 from agent import initialize_agent, send, tool_manager
+from configuration import TOOL_LABELS
 from memory_and_context import run_evaluator
 from RECURRING_TASKS.recurring_tasks import start_recurring_tasks, set_dispatch
 from connectors import CONNECTORS
@@ -39,51 +40,6 @@ _oauth_code_future = None
 # Session Management
 IDLE_MINUTES = 5
 GRACEFUL_DRAIN_TIMEOUT = 10  # seconds to wait for in-flight tasks before force-cancel
-
-TOOL_LABELS = {
-    # ── Instamart: Discover ──────────────────────────────────
-    "search_products":    "🔍 Searching for products...",
-    "your_go_to_items":   "⭐ Fetching your go-to items...",
-    "get_addresses":      "📍 Fetching your saved addresses...",
-    "create_address":     "📍 Saving new address...",
-    "delete_address":     "🗑️ Deleting address...",
-
-    # ── Instamart: Cart ──────────────────────────────────────
-    "get_cart":           "🛒 Fetching your cart...",
-    "update_cart":        "🛒 Updating your cart...",
-    "clear_cart":         "🗑️ Clearing your cart...",
-
-    # ── Instamart: Order ─────────────────────────────────────
-    "checkout":           "📦 Placing your order...",
-
-    # ── Instamart: Track ─────────────────────────────────────
-    "get_orders":         "📋 Fetching your order history...",
-    "get_order_details":  "🔎 Getting order details...",
-    "track_order":        "🚴 Tracking your order...",
-
-    # ── Instamart: Support ───────────────────────────────────
-    "report_error":       "📝 Generating error report...",
-
-    # ── Food: Discover ───────────────────────────────────────
-    "search_restaurants": "🔍 Searching restaurants...",
-    "search_menu":        "🍽️ Searching the menu...",
-    "get_restaurant_menu":"🍽️ Fetching restaurant menu...",
-
-    # ── Food: Cart ───────────────────────────────────────────
-    "get_food_cart":      "🛒 Fetching your food cart...",
-    "update_food_cart":   "🛒 Updating your food cart...",
-    "flush_food_cart":    "🗑️ Clearing your food cart...",
-    "fetch_food_coupons": "🎟️ Finding available coupons...",
-    "apply_food_coupon":  "🎟️ Applying coupon...",
-
-    # ── Food: Order ──────────────────────────────────────────
-    "place_food_order":   "📦 Placing your food order...",
-
-    # ── Food: Track ──────────────────────────────────────────
-    "get_food_orders":    "📋 Fetching your food orders...",
-    "get_food_order_details": "🔎 Getting order details...",
-    "track_food_order":   "🚴 Tracking your food order...",
-}
 
 @dataclass
 class UserSession:
