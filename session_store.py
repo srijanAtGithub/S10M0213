@@ -89,10 +89,44 @@ async def save_session(user_id: str, session: "UserSession"):  # type: ignore[na
 
 
 async def delete_session(user_id: str):
-    """Remove a session record (called on expiry)."""
+    """Remove a session record and all associated LangGraph checkpoint data."""
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+        # First get the session_id (= LangGraph thread_id) before deleting
+        async with db.execute(
+            "SELECT session_id FROM sessions WHERE user_id = ?",
+            (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+
+        if row is None:
+            return
+
+        session_id = row[0]
+
+        # Delete from your sessions table
+        await db.execute(
+            "DELETE FROM sessions WHERE user_id = ?",
+            (user_id,)
+        )
+
+        # Delete all LangGraph checkpoint data for this thread
+        await db.execute(
+            "DELETE FROM checkpoints WHERE thread_id = ?",
+            (session_id,)
+        )
+        await db.execute(
+            "DELETE FROM writes WHERE thread_id = ?",
+            (session_id,)
+        )
+
         await db.commit()
+
+        print(
+            f"🗑️  Deleted session and LangGraph data"
+            f"\n🧵 Session ID: {session_id[:8]}..."
+            f"\n👤 User ID   : {user_id}\n"
+        )
 
 
 async def load_all_sessions() -> dict[str, PersistedSession]:
