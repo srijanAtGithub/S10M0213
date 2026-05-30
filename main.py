@@ -24,6 +24,7 @@ from agent import initialize_agent, send, tool_manager
 from memory_and_context import run_evaluator
 from RECURRING_TASKS.recurring_tasks import start_recurring_tasks, set_dispatch
 from connectors import CONNECTORS
+from session_store import init_db, load_all_sessions, load_session, save_session, delete_session
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID_FILE = Path(".chat_id")
@@ -108,10 +109,11 @@ def format_time(ts: float) -> str:
     return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
 
-async def expire_session_after_timeout(user_id: str, session_id: str, user_name: str):
+async def expire_session_after_timeout(user_id: str, session_id: str, user_name: str, override_seconds: float | None = None):
 
     try:
-        await asyncio.sleep(IDLE_MINUTES * 60)
+        sleep_duration = override_seconds if override_seconds is not None else IDLE_MINUTES * 60
+        await asyncio.sleep(sleep_duration)
     except asyncio.CancelledError:
         print(f"🔄 Session timer reset for user {user_id} ({user_name})")
         return
@@ -141,7 +143,7 @@ async def expire_session_after_timeout(user_id: str, session_id: str, user_name:
             print("⚠️  Graph not yet initialized — skipping evaluator.")
             return
 
-        state = current_graph.get_state(config)
+        state = await current_graph.aget_state(config)
         messages = state.values.get("messages", [])
 
         if messages:
@@ -168,15 +170,19 @@ async def expire_session_after_timeout(user_id: str, session_id: str, user_name:
 
     finally:
         _sessions.pop(user_id, None)
+        await delete_session(user_id)
         print("🗑️  Session removed from store.\n")
 
 
 # Session store logic
 # get_or_create_session  →  always returns a valid (session_id, is_new) pair
 # The expiry task is created/reset here by the async caller (on_telegram_message)
-def get_or_create_session(user_id: str, user_name: str) -> tuple[str, bool]:
+async def get_or_create_session(user_id: str, user_name: str) -> tuple[str, bool]:
     """
     Returns (session_id, is_new_session).
+
+    On first call after a restart, loads the persisted session from SQLite
+    so LangGraph can resume from the same thread_id (= session_id).
 
     Does NOT create expiry tasks — that's the async caller's job,
     because create_task must be called from an async context.
@@ -189,19 +195,50 @@ def get_or_create_session(user_id: str, user_name: str) -> tuple[str, bool]:
     """
 
     existing = _sessions.get(user_id)
+ 
+    if existing is not None:
+        # Already in memory — just refresh the timestamp.
+        existing.last_interaction_at = time.time()
+        return existing.session_id, False
+ 
+    # Not in memory — check the DB.
+    persisted = await load_session(user_id)
+ 
+    if persisted is not None:
+        elapsed = time.time() - persisted.last_interaction_at
+        remaining = (IDLE_MINUTES * 60) - elapsed
 
-    if existing is None:
-        session = UserSession(
-            session_id=str(uuid.uuid4()),
-            user_name=user_name,
-        )
-        _sessions[user_id] = session
-        return session.session_id, True
+        # Expired during downtime — delete and treat as new session
+        if remaining <= 0:
+            await delete_session(user_id)
+            print(
+                f"\n🗑️ SESSION EXPIRED DURING DOWNTIME"
+                f"\n👤 User      : {user_name} ({user_id})"
+                f"\n🧵 Session ID: {persisted.session_id[:8]}...\n"
+            )
+        else:
+            # Still valid — restore it
+            session = UserSession(
+                session_id=persisted.session_id,
+                user_name=persisted.user_name,
+                started_at=persisted.started_at,
+                last_interaction_at=time.time(),
+            )
+            _sessions[user_id] = session
+            print(
+                f"\n♻️ RESTORED SESSION"
+                f"\n👤 User      : {user_name} ({user_id})"
+                f"\n🧵 Session ID: {persisted.session_id[:8]}...\n"
+            )
+            return session.session_id, False
 
-    # Session exists — expiry task is already running (or was reset).
-    # Update last_interaction_at so the expiry guard can use it for logging.
-    existing.last_interaction_at = time.time()
-    return existing.session_id, False
+    # Genuinely new user — create a fresh session (existing code below, unchanged)
+    session = UserSession(
+        session_id=str(uuid.uuid4()),
+        user_name=user_name,
+    )
+    _sessions[user_id] = session
+    return session.session_id, True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -217,9 +254,12 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     text      = update.message.text or ""
 
     # ── Session: get or create ────────────────────────────────────────────────
-    session_id, is_new_session = get_or_create_session(user_id, user_name)
+    session_id, is_new_session = await get_or_create_session(user_id, user_name)
     session = _sessions[user_id]
     session.chat_id = update.effective_chat.id
+
+    # Persist after every interaction (updates last_interaction_at)
+    await save_session(user_id, session)
 
     # ── REJECT-WHILE-BUSY ─────────────────────────────────────────────────────
     # If a response is already being generated for this user, don't start
@@ -466,6 +506,7 @@ def load_persisted_chat_id() -> int | None:
     except Exception:
         return None
     
+
 async def dispatch_recurring_task(task_id: str, task_text: str):
     session_id = str(uuid.uuid4())
 
@@ -497,17 +538,62 @@ async def dispatch_recurring_task(task_id: str, task_text: str):
     except Exception as e:
         print(f"❌ Failed to send recurring task reply [{task_id}]: {e}", flush=True)
     
+    
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global telegram_app
     global active_chat_id
 
+    # ── Init persistent storage ───────────────────────────────────────────────
+    await init_db()
+
+    persisted = await load_all_sessions()
+    now = time.time()
+
+    for uid, p in persisted.items():
+        elapsed = now - p.last_interaction_at
+        remaining = (IDLE_MINUTES * 60) - elapsed
+
+        # Session should have expired while server was down — clean it up
+        if remaining <= 0:
+            await delete_session(uid)
+            print(
+                f"\n🗑️ EXPIRED DURING DOWNTIME (skipped restore)"
+                f"\n👤 User      : {p.user_name} ({uid})"
+                f"\n🧵 Session ID: {p.session_id[:8]}...\n"
+            )
+            continue
+
+        # Session is still valid — restore it with the remaining time
+        session = UserSession(
+            session_id=p.session_id,
+            user_name=p.user_name,
+            started_at=p.started_at,
+            last_interaction_at=p.last_interaction_at,
+        )
+        _sessions[uid] = session
+
+        # Start expiry timer with REMAINING time, not full IDLE_MINUTES
+        session.expiry_task = asyncio.create_task(
+            expire_session_after_timeout(uid, p.session_id, p.user_name, override_seconds=remaining)
+        )
+
+        print(
+            f"\n♻️ RESTORED SESSION"
+            f"\n👤 User      : {p.user_name} ({uid})"
+            f"\n🧵 Session ID: {p.session_id[:8]}..."
+            f"\n⏳ Expires in: {remaining:.0f}s\n"
+        )
+
+    if persisted:
+        print(f"♻️  Restored {len(_sessions)} valid session(s) from DB")
+
     saved = load_persisted_chat_id()
     if saved:
         active_chat_id = saved
-        print(f"📌 Loaded persisted chat_id: {active_chat_id}")
+        print(f"Loaded persisted chat_id: {active_chat_id}")
     else:
-        print("⚠️  No chat_id yet — user must send /start first.")
+        print("No chat_id yet — user must send /start first.")
 
     telegram_app = Application.builder().token(TOKEN).concurrent_updates(True).build()
 
@@ -558,7 +644,7 @@ async def lifespan(app: FastAPI):
     ]
  
     if processing_sessions:
-        print(f"\n⚠️  Shutdown: {len(processing_sessions)} active session(s) in progress. Notifying users...")
+        print(f"\n ⚠️ Shutdown: {len(processing_sessions)} active session(s) in progress. Notifying users...")
  
         notify_tasks = []
         for uid, session in processing_sessions:

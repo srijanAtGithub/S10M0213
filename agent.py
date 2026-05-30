@@ -5,10 +5,11 @@ from datetime import datetime
 from typing import TypedDict, Annotated, Literal
 
 from pydantic import BaseModel
+import aiosqlite
 
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt, Command
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 import tiktoken
 from langchain_core.messages import (SystemMessage, HumanMessage, AIMessage, ToolMessage)
@@ -16,6 +17,7 @@ from langchain_core.messages import (SystemMessage, HumanMessage, AIMessage, Too
 from memory_and_context import get_system_message, get_relevant_preferences
 from tool_manager import ToolManager
 import configuration
+from session_store import DB_PATH
 
 # State Class
 class AgentState(TypedDict):
@@ -390,9 +392,12 @@ async def initialize_agent():
 
     builder.add_edge("tools", "main_node")
 
-    graph = builder.compile(
-        checkpointer=MemorySaver()
-    )
+    # ── Persistent checkpointer ───────────────────────────────────────────────
+    # AsyncSqliteSaver manages its own tables inside the same DB file.
+    # It is async-safe and works perfectly with LangGraph's astream_events.
+    conn = await aiosqlite.connect(str(DB_PATH))
+    checkpointer = AsyncSqliteSaver(conn)
+    graph = builder.compile(checkpointer=checkpointer)
 
     print("✅ LangGraph initialized")
 
@@ -407,7 +412,7 @@ async def send(message: str, thread_id: str, status_callback=None, cancel_check=
         return {"reply": None, "interrupt": None}
 
     try:
-        state = graph.get_state(config)
+        state = await graph.aget_state(config)
 
         is_interrupted = (
             bool(state.next)
@@ -424,13 +429,13 @@ async def send(message: str, thread_id: str, status_callback=None, cancel_check=
             async for event in graph.astream_events(Command(resume=message), config, version="v2"):
                 if event["event"] == "on_tool_start" and status_callback:
                     await status_callback(event.get("name", ""))
-            log_latest_message(config)
+            await log_latest_message(config)
         else:
             print(f"👤 User: {message}")
             async for event in graph.astream_events({"messages": [HumanMessage(content=message)]}, config, version="v2"):
                 if event["event"] == "on_tool_start" and status_callback:
                     await status_callback(event.get("name", ""))
-            log_latest_message(config)
+            await log_latest_message(config)
 
         if cancel_check and cancel_check():
             return {"reply": None, "interrupt": None}
@@ -447,22 +452,18 @@ async def send(message: str, thread_id: str, status_callback=None, cancel_check=
             "interrupt": None,
         }
 
-    # Extract latest response
-    messages = graph.get_state(config).values.get("messages", [])
+    # ── Extract latest response ───────────────────────────────
+    state = await graph.aget_state(config)
+    messages = state.values.get("messages", [])
 
     latest_ai_message = None
-
     for msg in reversed(messages):
-
         if isinstance(msg, AIMessage) and msg.content:
             latest_ai_message = msg.content
             break
 
-    # Interrupt handling
-    state = graph.get_state(config)
-
+    # ── Interrupt check ───────────────────────────────────────
     interrupt_message = None
-
     if (state.next and state.tasks and state.tasks[0].interrupts):
         interrupt_message = state.tasks[0].interrupts[0].value
 
@@ -648,8 +649,9 @@ async def maybe_summarize(messages, summarizer_llm):
     return [summary_message] + fresh
 
 
-def log_latest_message(config):
-    messages = graph.get_state(config).values.get("messages", [])
+async def log_latest_message(config):
+    state = await graph.aget_state(config)
+    messages = state.values.get("messages", [])
 
     if not messages:
         return
