@@ -20,6 +20,7 @@ gmail_token_*.json
 # User specific data
 .chat_id
 DATA/
+settings.json
 
 # Dev folders
 Notes/
