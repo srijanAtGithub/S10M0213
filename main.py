@@ -700,8 +700,34 @@ async def send_to_telegram(text: str):
 
 # Entry
 def main():
+    init_settings()
     print("S10M0213 started successfully.")
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+def init_settings():
+    with open("settings.json") as f:
+        settings = json.load(f)
+
+    # Sync .env
+    ENV_KEYS = ["TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY"]
+    
+    env = {}
+    if Path(".env").exists():
+        for line in Path(".env").read_text().splitlines():
+            if line.strip() and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+
+    for key in ENV_KEYS:
+        if settings.get(key):
+            env[key] = settings[key]
+
+    Path(".env").write_text("\n".join(f'{k}={v}' for k, v in env.items()) + "\n")
+
+    # Sync configuration.py
+    import configuration
+    configuration.PROVIDER = settings.get("AI_PROVIDER")
 
 
 if __name__ == "__main__":
