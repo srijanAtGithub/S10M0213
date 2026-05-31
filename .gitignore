@@ -19,7 +19,7 @@ gmail_token_*.json
 
 # User specific data
 .chat_id
-DATA/
+Data/
 settings.json
 
 # Dev folders
