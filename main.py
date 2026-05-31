@@ -23,7 +23,7 @@ import agent as agent_module
 from agent import initialize_agent, send, tool_manager
 from configuration import TOOL_LABELS
 from memory_and_context import run_evaluator
-from RECURRING_TASKS.recurring_tasks import start_recurring_tasks, set_dispatch
+from Recurring_Tasks.recurring_tasks import start_recurring_tasks, set_dispatch
 from connectors import CONNECTORS
 from session_store import init_db, load_all_sessions, load_session, save_session, delete_session
 

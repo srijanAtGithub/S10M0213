@@ -7,8 +7,8 @@ import asyncio
 import configuration
 
 BASE_DIR = Path(__file__).resolve().parent
-SOUL_DIR = BASE_DIR / "SOULS"
-CONTEXT_DIR = BASE_DIR / "CONTEXT"
+SOUL_DIR = BASE_DIR / "Souls"
+CONTEXT_DIR = BASE_DIR / "Context"
 PREFERENCES_FILE = CONTEXT_DIR / "preferences.md"
 
 eval_llm = configuration.get_eval_llm()
