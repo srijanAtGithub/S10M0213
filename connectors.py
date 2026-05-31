@@ -1,6 +1,6 @@
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from swiggy_auth import get_valid_token
-from gmail_auth import get_gmail_token
+from Auth.swiggy_auth import get_valid_token
+from Auth.gmail_auth import get_gmail_token
 
 
 async def load_swiggy_tools(tool_manager):

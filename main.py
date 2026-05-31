@@ -2,7 +2,7 @@ import os
 import uuid
 import time
 import asyncio
-import swiggy_auth
+import Auth.swiggy_auth
 
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
@@ -673,8 +673,8 @@ async def root():
 async def oauth_callback(code: str, state: str | None = None):
     print("✅ OAuth callback received", flush=True)
 
-    if swiggy_auth._oauth_code_future and not swiggy_auth._oauth_code_future.done():
-        swiggy_auth._oauth_code_future.set_result(code)
+    if Auth.swiggy_auth._oauth_code_future and not Auth.swiggy_auth._oauth_code_future.done():
+        Auth.swiggy_auth._oauth_code_future.set_result(code)
 
     return {
         "status": "success",
