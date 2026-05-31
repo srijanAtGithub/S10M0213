@@ -104,4 +104,90 @@ TOOL_LABELS = {
     "create_label":       "➕ Creating email label...",
     "update_label":       "✏️ Updating email label...",
     "delete_label":       "🗑️ Deleting email label...",
+
+    # ── Telegram: Profile & Account ──────────────────────────
+    "get_me":                     "👤 Fetching profile details...",
+
+    # ── Telegram: Contacts ───────────────────────────────────
+    "list_contacts":              "👥 Fetching contact list...",
+    "search_contacts":            "🔍 Searching contacts...",
+    "get_contact_ids":            "🆔 Fetching contact IDs...",
+    "get_direct_chat_by_contact":  "💬 Opening contact chat...",
+    "get_contact_chats":          "💬 Finding chats with contact...",
+    "get_last_interaction":       "⏳ Checking last interaction time...",
+    "add_contact":                "➕ Adding new contact...",
+    "delete_contact":             "🗑️ Deleting contact...",
+    "block_user":                 "🚫 Blocking user...",
+    "unblock_user":               "✅ Unblocking user...",
+    "get_blocked_users":          "📋 Fetching blocked users list...",
+
+    # ── Telegram: Chats & Channels ───────────────────────────
+    "get_chats":                  "💬 Loading recent chats...",
+    "list_chats":                 "📋 Listing available chats...",
+    "get_chat":                   "💬 Fetching chat information...",
+    "resolve_username":           "🔎 Resolving Telegram username...",
+    "archive_chat":               "📦 Moving chat to archive...",
+    "unarchive_chat":             "📤 Removing chat from archive...",
+
+    # ── Telegram: Messages & History ─────────────────────────
+    "get_messages":               "💬 Loading specific messages...",
+    "send_message":               "💬 Sending message...",
+    "send_scheduled_message":     "⏰ Scheduling message...",
+    "get_scheduled_messages":     "📋 Fetching scheduled messages...",
+    "delete_scheduled_message":   "🗑️ Deleting scheduled message...",
+    "list_messages":              "📋 Listing chat messages...",
+    "get_message_context":        "🔍 Loading surrounding message context...",
+    "edit_message":               "✏️ Editing message...",
+    "delete_message":             "🗑️ Deleting message...",
+    "delete_chat_history":        "🧹 Wiping chat history...",
+    "delete_messages_bulk":       "🗑️ Deleting multiple messages...",
+    "mark_as_read":               "✔️ Marking messages as read...",
+    "reply_to_message":           "💬 Replying to message...",
+    "search_messages":            "🔍 Searching messages in chat...",
+    "get_history":                "📜 Loading chat history...",
+    "save_draft":                 "📝 Saving message draft...",
+    "get_drafts":                 "📄 Fetching message drafts...",
+    "clear_draft":                "🗑️ Clearing message draft...",
+}
+
+
+TELEGRAM_BLACKLIST = {
+    # Account & Profile Management
+    "list_accounts", "update_profile", "set_profile_photo", "delete_profile_photo", 
+    "get_user_photos", "get_user_status", "get_privacy_settings", "set_privacy_settings", "get_full_user",
+    
+    # Contact Operations
+    "import_contacts", "export_contacts", "send_contact",
+    
+    # Advanced Chat Metadata & Public Actions
+    "get_full_chat", "search_public_chats", "subscribe_public_channel", 
+    "leave_chat", "mute_chat", "unmute_chat", "get_common_chats", "list_topics",
+
+    # Group & Channel Administration 
+    "create_group", "invite_to_group", "get_participants", "create_channel", 
+    "edit_chat_title", "edit_chat_photo", "edit_chat_about", "delete_chat_photo", 
+    "promote_admin", "demote_admin", "ban_user", "unban_user", 
+    "set_default_chat_permissions", "toggle_slow_mode", "edit_admin_rights", 
+    "get_admins", "get_banned_users", "get_invite_link", "join_chat_by_link", 
+    "export_chat_invite", "import_chat_invite", "get_recent_actions",
+
+    # Unnecessary Message Interactions
+    "get_message_read_by", "get_message_link", "list_inline_buttons", 
+    "press_inline_button", "forward_message", "forward_messages", "pin_message", 
+    "unpin_message", "unpin_all_messages",
+
+    # Broad Scope Searches & Reactions
+    "search_global", "get_pinned_messages", "create_poll", "send_reaction", 
+    "remove_reaction", "get_message_reactions",
+
+    # Media & Attachments
+    "send_file", "send_album", "download_media", "send_voice", "upload_file", 
+    "get_media_info", "get_sticker_sets", "send_sticker", "get_gif_search", "send_gif",
+
+    # Chat Folders
+    "list_folders", "get_folder", "create_folder", "add_chat_to_folder", 
+    "remove_chat_from_folder", "delete_folder", "reorder_folders",
+
+    # Bots & Real-Time Operations
+    "get_bot_info", "set_bot_commands", "wait_for_new_message", "wait_for_settled_message"
 }
