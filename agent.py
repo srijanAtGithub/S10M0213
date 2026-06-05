@@ -212,10 +212,28 @@ async def initialize_agent():
         last      = state["messages"][-1]
         tool_call = last.tool_calls[0]
 
+        # ── Natural Language Formatting ─────────────────────
+        tool_name = tool_call["name"]
+        raw_args = tool_call.get("args", {})
+
+        # Friendly label we already have in configuration.py
+        friendly_title = configuration.TOOL_LABELS.get(tool_name, f"Execute {tool_name}")
+        if friendly_title.endswith("..."):
+            friendly_title = friendly_title[:-3] # Strip the trailing dots for a cleaner title
+            
+        # Formatting the arguments into readable bullet points
+        if raw_args:
+            args_display = "\n".join(f"  • {str(k).replace('_', ' ').title()}: {v}" for k, v in raw_args.items())
+            details_section = f"Details:\n{args_display}"
+        else:
+            details_section = ""
+
+        # Presenting it naturally to the user
         user_reply = interrupt(
-            f"⚠️  Agent wants to call `{tool_call['name']}`\n"
-            f"📦 Args: {tool_call['args']}\n\n"
-            f"Go ahead? Reply with 'yes', 'no', or give new instructions."
+            f"{friendly_title}\n\n"
+            f"I need your permission to proceed.\n"
+            f"{details_section}\n\n"
+            f"Should I go ahead? (Reply with yes, no, or tell me what to change)"
         )
 
         intent_result = await intent_llm.ainvoke([
