@@ -1,14 +1,16 @@
-# S10M0213 — Personal AI Agent
+# S10M0213 — State-Locked Autonomous Agent Framework & Resilient Tool Orchestrator
 
-A production-grade personal AI agent that lives in your Telegram. It handles real-world tasks through MCP-connected services, remembers your preferences across sessions, runs scheduled tasks around the clock, and always asks before doing anything destructive — all within a single, cost-efficient architecture.
+A production-grade, cost-efficient, and crash-resilient AI runtime powered by **LangGraph** and **Multi-Transport MCP**. Operating through an asynchronous **Telegram** interface, it can coordinate external tools, execute recurring tasks, maintain long-term memory, and persist workflow state across restarts.
 
----
+Designed as a persistent personal agent, S10M0213 emphasizes efficient reasoning, safe automation, and operational reliability.
 
-## What It Does
+The system is built around five core principles:
 
-You talk to it through Telegram like any other chat. Behind the scenes, it connects to services like Swiggy, Gmail, and Telegram itself, executes tasks on your behalf, and gets smarter about your habits over time. It's always on, it remembers you, and it won't do anything irreversible without asking first.
-
----
+- **Cost-efficient reasoning** — use specialized models, selective context retrieval, and multi-stage tool filtering to maximize accuracy while minimizing token consumption.
+- **Scalable tool orchestration** — dynamically retrieve only the tools relevant to the current request, keeping reasoning focused even as the available toolset grows.
+- **Persistent memory** — learn user preferences over time and inject only contextually relevant information into conversations.
+- **Safe automation** — enforce human approval before executing potentially destructive actions.
+- **Operational resilience** — preserve sessions, checkpoints, and scheduled workflows across downtime and infrastructure failures.
 
 ## Architecture Overview
 
@@ -106,7 +108,7 @@ On unexpected shutdown, a 10-second graceful drain gives in-flight tasks time to
 
 ### Keeps Context Sharp as Conversations Grow Long
 
-Long conversations accumulate fast, especially with tool calls. Once the message history exceeds 15,000 tokens, the context trimmer kicks in.
+Long conversations accumulate fast, especially with tool calls. Once the message history exceeds tokens threshold, the context trimmer kicks in.
 
 <img src="Images/context_trimming.svg" alt="Context Trimming" width="75%">
 
