@@ -28,17 +28,17 @@ Most agents fall apart as you add more tools — the context window fills up, co
 
 <img src="Images/two_stage_tool_retrieval.svg" alt="Two-Stage Tool Retrieval" width="75%">
 
-**Stage 1 — Intent routing:** A cheap nano model reads the last 8 messages and decides which *services* are relevant right now (e.g. only Swiggy, not Gmail). Everything else is ignored entirely.
+**Stage 1 — Intent routing:** A cheap nano model reads the last few messages and decides which *services* are relevant right now (e.g. only Swiggy, not Gmail). Everything else is ignored entirely.
 
-**Stage 2 — Semantic filtering:** Within each selected service, tool descriptions are compared to the query using cosine similarity. Only the top 10 most relevant tools per service are passed forward.
+**Stage 2 — Semantic filtering:** Within each selected service, tool descriptions are compared to the query using cosine similarity. Only the most relevant tools per service are passed forward.
 
-The result: the main LLM always sees a short, focused list of tools regardless of how many are registered. You can add 500 more tools tomorrow and the model won't know or care about the ones that aren't relevant.
+The result: the main LLM always sees a short, focused list of tools regardless of how many are registered. You can add so many more tools tomorrow from multiple servers and the model won't know or care about the ones that aren't relevant.
 
 ---
 
 ### Remembers You — And Gets Better Over Time
 
-The agent builds a personal profile of you automatically. Every session, after you've been idle for 5 minutes, an evaluator LLM analyses the conversation and extracts stable behavioural patterns — things like ordering preferences, communication style, time habits, or how you like information presented.
+The agent builds a personal profile of you automatically. Every session, after you've been idle for some time, an evaluator LLM analyses the conversation and extracts stable behavioural patterns — things like ordering preferences, communication style, time habits, or how you like information presented.
 
 <img src="Images/memory_and_personalization.svg" alt="Memory and Personalization" width="75%">
 
