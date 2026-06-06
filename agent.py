@@ -1,22 +1,23 @@
 import operator
 import asyncio
 import traceback
+from datetime import datetime
 from typing import TypedDict, Annotated, Literal
 
 from pydantic import BaseModel
+import aiosqlite
 
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt, Command
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 import tiktoken
 from langchain_core.messages import (SystemMessage, HumanMessage, AIMessage, ToolMessage)
 
-from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
-
-from memory_and_context import get_system_message
+from memory_and_context import get_system_message, get_relevant_preferences
 from tool_manager import ToolManager
+import configuration
+from session_store import DB_PATH
 
 # State Class
 class AgentState(TypedDict):
@@ -48,7 +49,7 @@ graph = None
 
 # tokeniser helpers to count tokens
 enc = tiktoken.get_encoding("cl100k_base")
-TOKEN_THRESHOLD = 30_000
+TOKEN_THRESHOLD = 15_000
 
 # Number of recent conversational "units" we try to preserve fresh.
 # Actual preserved count may be slightly larger because we keep
@@ -62,10 +63,9 @@ async def initialize_agent():
 
     global graph
 
-    # main_llm = ChatOpenAI(model="gpt-5.4-mini").bind_tools(tools, parallel_tool_calls=False)
-    safety_llm = ChatOpenAI(model="gpt-5.4-nano").with_structured_output(SafetyResult)
-    intent_llm = ChatOpenAI(model="gpt-5.4-nano").with_structured_output(IntentResult)
-    summarizer_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
+    safety_llm = configuration.get_safety_llm(SafetyResult)
+    intent_llm = configuration.get_intent_llm(IntentResult)
+    summarizer_llm = configuration.get_summarizer_llm()
 
     # ─────────────────────────────────────────────────────────
     # Nodes
@@ -94,33 +94,46 @@ async def initialize_agent():
 
         MAIN_LLM_SOUL = get_system_message("main_llm")
 
-        # ── Richer retrieval context ──────────────────────────────────────
-        # Use last 4 messages instead of just the final human message.
-        # This carries domain context across multi-turn conversations,
-        # so "add to cart" on turn 6 still knows we're in Instamart.
-        recent_messages = state["messages"][-4:]
+        # ── Two-stage tool retrieval ──────────────────────────────────────
+        # Stage 1: router LLM picks which servers are needed
+        # Stage 2: within-server embedding filter picks top tools per server
         retrieval_context = " ".join(
             m.content
-            for m in recent_messages
+            for m in state["messages"][-8:]
             if isinstance(m, (HumanMessage, AIMessage)) and isinstance(m.content, str)
         )
 
-        # Dynamically infer which server domain is active
-        hint_tags = tool_manager.infer_hint_tags(state["messages"])
+        user_preferences = await get_relevant_preferences(retrieval_context)
 
-        relevant_tools = await tool_manager.get_relevant_tools(
+        relevant_servers = await tool_manager.get_relevant_servers(state["messages"])
+        relevant_tools   = await tool_manager.get_tools_for_servers(
+            servers=relevant_servers,
             query=retrieval_context,
-            top_k=10,
-            always_include=["get_user_profile", "get_saved_addresses"],
-            hint_tags=hint_tags,
+            top_k_per_server=12,
         )
 
-        # Rebind — this is just .bind_tools(), it's a cheap local operation
-        main_llm = ChatOpenAI(model="gpt-5.4-mini").bind_tools(relevant_tools, parallel_tool_calls=False)
+        # Fallback: conversational message or router returned nothing
+        if not relevant_tools:
+            relevant_tools = tool_manager.all_tools
+
+        # ── Build system message — inject preferences only if something was retrieved ──
+        if user_preferences:
+            system_content = (
+                MAIN_LLM_SOUL
+                + "\n\n---\n\n"
+                + "# Relevant User Preferences\n\n"
+                + "Apply these when deciding how to respond or what to do next:\n\n"
+                + user_preferences
+            )
+        else:
+            system_content = MAIN_LLM_SOUL
+
+        # Rebind with the new tools
+        main_llm = configuration.get_main_llm(tools=relevant_tools)
         try:
             trimmed_messages = await maybe_summarize(state["messages"], summarizer_llm)
             response = await main_llm.ainvoke([
-                SystemMessage(content=MAIN_LLM_SOUL),
+                SystemMessage(content=system_content),
                 *trimmed_messages
             ])
         except Exception as e:
@@ -133,6 +146,10 @@ async def initialize_agent():
 
         tool_call = response.tool_calls[0]
         tool_name  = tool_call["name"]
+
+        tool_map  = {e.tool.name: e.tool for e in tool_manager._registry}
+        tool_obj  = tool_map.get(tool_name)
+        tool_desc = tool_obj.description if tool_obj else "No description available"
 
         # ── Safety fast-path ─────────────────────────────────────────────
         # Classify by name pattern first. Only call the safety LLM for
@@ -161,8 +178,9 @@ async def initialize_agent():
             safety_result = await safety_llm.ainvoke([
                 SystemMessage(content=SAFETY_LLM_SOUL),
                 HumanMessage(content=(
-                    f"Tool: {tool_call['name']}\n"
-                    f"Args: {tool_call['args']}\n"
+                    f"Tool name: {tool_name}\n"
+                    f"Tool description: {tool_desc}\n"
+                    f"Args being passed: {tool_call['args']}\n\n"
                     "Is this safe to auto-execute without asking the user?"
                 ))
             ])
@@ -194,10 +212,28 @@ async def initialize_agent():
         last      = state["messages"][-1]
         tool_call = last.tool_calls[0]
 
+        # ── Natural Language Formatting ─────────────────────
+        tool_name = tool_call["name"]
+        raw_args = tool_call.get("args", {})
+
+        # Friendly label we already have in configuration.py
+        friendly_title = configuration.TOOL_LABELS.get(tool_name, f"Execute {tool_name}")
+        if friendly_title.endswith("..."):
+            friendly_title = friendly_title[:-3] # Strip the trailing dots for a cleaner title
+            
+        # Formatting the arguments into readable bullet points
+        if raw_args:
+            args_display = "\n".join(f"  • {str(k).replace('_', ' ').title()}: {v}" for k, v in raw_args.items())
+            details_section = f"Details:\n{args_display}"
+        else:
+            details_section = ""
+
+        # Presenting it naturally to the user
         user_reply = interrupt(
-            f"⚠️  Agent wants to call `{tool_call['name']}`\n"
-            f"📦 Args: {tool_call['args']}\n\n"
-            f"Go ahead? Reply with 'yes', 'no', or give new instructions."
+            f"{friendly_title}\n\n"
+            f"I need your permission to proceed.\n"
+            f"{details_section}\n\n"
+            f"Should I go ahead? (Reply with yes, no, or tell me what to change)"
         )
 
         intent_result = await intent_llm.ainvoke([
@@ -216,15 +252,37 @@ async def initialize_agent():
             )
         ])
 
+        # ── Populate approval logs ─────────────────────────────
+        approval_entry = {
+            "tool_name": tool_call["name"],
+            "args": tool_call["args"],
+            "user_reply": user_reply,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        intent_entry = {
+            "tool_name": tool_call["name"],
+            "intent": intent_result.intent,
+            "refined_instruction": intent_result.refined_instruction
+        }
+
         if intent_result.intent == "yes":
-            return {"messages": []}
+            return {
+                "messages": [],
+                "approval_log": [approval_entry],
+                "intent_log": [intent_entry]
+            }
 
         content = (
             f"Tool call rejected by user. Reason: {user_reply}"
             if intent_result.intent == "no"
             else f"Tool call not executed. User wants changes: {intent_result.refined_instruction}"
         )
-        return {"messages": [ToolMessage(tool_call_id=tool_call["id"], content=content)]}
+        return {
+            "messages": [ToolMessage(tool_call_id=tool_call["id"], content=content)],
+            "approval_log": [approval_entry],
+            "intent_log": [intent_entry]
+        }
 
 
     async def tool_executor_node(state: AgentState) -> AgentState:
@@ -237,10 +295,36 @@ async def initialize_agent():
         tool = tool_map.get(tool_call["name"])
 
         if not tool:
-            return {"messages": [ToolMessage(
-                tool_call_id=tool_call["id"],
-                content=f"Tool '{tool_call['name']}' not found. The connector may not be loaded."
-            )]}
+            timestamp = datetime.utcnow().isoformat()
+            error_entry = {
+                "tool_name": tool_call["name"],
+                "args": tool_call["args"],
+                "error": "Tool not found",
+                "timestamp": timestamp
+            }
+            tool_call_entry = {
+                "tool_name": tool_call["name"],
+                "args": tool_call["args"],
+                "status": "not_found",
+                "timestamp": timestamp
+            }
+
+            return {
+                "messages": [ToolMessage(
+                    tool_call_id=tool_call["id"],
+                    content=f"Tool '{tool_call['name']}' not found. The connector may not be loaded."
+                )],
+                "tool_call_log": [tool_call_entry],
+                "tool_error_log": [error_entry]
+            }
+
+        # ── Base tool execution log ────────────────────────────
+        tool_call_entry = {
+            "tool_name": tool_call["name"],
+            "args": tool_call["args"],
+            "status": "pending",
+            "timestamp": datetime.utcnow().isoformat()
+        }
 
         try:
             # BEFORE EXECUTION
@@ -252,21 +336,42 @@ async def initialize_agent():
             # AFTER EXECUTION
             print(f"✅ Tool result: {str(result)[:500]}\n")
 
-            return {"messages": [ToolMessage(
-                tool_call_id=tool_call["id"],
-                content=str(result)
-            )]} 
+            tool_call_entry["status"] = "success"
+            tool_call_entry["result"] = str(result)[:500]
+
+            return {
+                "messages": [
+                    ToolMessage(
+                        tool_call_id=tool_call["id"],
+                        content=str(result)
+                    )
+                ],
+                "tool_call_log": [tool_call_entry]
+            } 
 
         except Exception as e:
             traceback.print_exc()
 
-            return {"messages": [ToolMessage(
-                tool_call_id=tool_call["id"],
-                content=(
-                    "Tool execution failed.\n"
-                    f"Error: {str(e)}"
-                )
-            )]}
+            tool_call_entry["status"] = "failed"
+            tool_call_entry["error"] = str(e)
+
+            error_entry = {
+                "tool_name": tool_call["name"],
+                "args": tool_call["args"],
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+            return {
+                "messages": [
+                    ToolMessage(
+                        tool_call_id=tool_call["id"],
+                        content=f"Tool execution failed.\nError: {str(e)}"
+                    )
+                ],
+                "tool_call_log": [tool_call_entry],
+                "tool_error_log": [error_entry]
+            }
         
 
     # ─────────────────────────────────────────────────────────
@@ -305,22 +410,27 @@ async def initialize_agent():
 
     builder.add_edge("tools", "main_node")
 
-    graph = builder.compile(
-        checkpointer=MemorySaver()
-    )
+    # ── Persistent checkpointer ───────────────────────────────────────────────
+    # AsyncSqliteSaver manages its own tables inside the same DB file.
+    # It is async-safe and works perfectly with LangGraph's astream_events.
+    conn = await aiosqlite.connect(str(DB_PATH))
+    checkpointer = AsyncSqliteSaver(conn)
+    graph = builder.compile(checkpointer=checkpointer)
 
     print("✅ LangGraph initialized")
 
 
 # Send message
-async def send(message: str, thread_id: str):
+async def send(message: str, thread_id: str, status_callback=None, cancel_check=None):
 
     config = {"configurable": {"thread_id": thread_id}}
-
     print(f"─── Thread: {thread_id} ───")
 
+    if cancel_check and cancel_check():
+        return {"reply": None, "interrupt": None}
+
     try:
-        state = graph.get_state(config)
+        state = await graph.aget_state(config)
 
         is_interrupted = (
             bool(state.next)
@@ -328,17 +438,27 @@ async def send(message: str, thread_id: str):
             and bool(state.tasks[0].interrupts)
         )
 
+        if cancel_check and cancel_check():
+            return {"reply": None, "interrupt": None}
+
         # AUTO RESUME DETECTION
         if is_interrupted:
             print(f"↩️ Resuming: {message}")
-            await graph.ainvoke(Command(resume=message), config)
-            log_latest_message(config)
+            async for event in graph.astream_events(Command(resume=message), config, version="v2"):
+                if event["event"] == "on_tool_start" and status_callback:
+                    await status_callback(event.get("name", ""))
+            await log_latest_message(config)
         else:
             print(f"👤 User: {message}")
-            await graph.ainvoke({"messages": [HumanMessage(content=message)]}, config)
-            log_latest_message(config)
-    except Exception as e:
+            async for event in graph.astream_events({"messages": [HumanMessage(content=message)]}, config, version="v2"):
+                if event["event"] == "on_tool_start" and status_callback:
+                    await status_callback(event.get("name", ""))
+            await log_latest_message(config)
 
+        if cancel_check and cancel_check():
+            return {"reply": None, "interrupt": None}
+
+    except Exception as e:
         print(f"❌ Graph execution failed: {e}")
 
         # IMPORTANT: Reset corrupted thread state by starting fresh
@@ -350,22 +470,18 @@ async def send(message: str, thread_id: str):
             "interrupt": None,
         }
 
-    # Extract latest response
-    messages = graph.get_state(config).values.get("messages", [])
+    # ── Extract latest response ───────────────────────────────
+    state = await graph.aget_state(config)
+    messages = state.values.get("messages", [])
 
     latest_ai_message = None
-
     for msg in reversed(messages):
-
         if isinstance(msg, AIMessage) and msg.content:
             latest_ai_message = msg.content
             break
 
-    # Interrupt handling
-    state = graph.get_state(config)
-
+    # ── Interrupt check ───────────────────────────────────────
     interrupt_message = None
-
     if (state.next and state.tasks and state.tasks[0].interrupts):
         interrupt_message = state.tasks[0].interrupts[0].value
 
@@ -373,15 +489,24 @@ async def send(message: str, thread_id: str):
 
 
 def count_tokens(messages) -> int:
-
     total = 0
-
     for msg in messages:
-
+        # Count content
         content = getattr(msg, "content", "")
-
         if isinstance(content, str):
             total += len(enc.encode(content))
+        elif isinstance(content, list):
+            # Some tool results come back as list of content blocks
+            for block in content:
+                if isinstance(block, dict) and "text" in block:
+                    total += len(enc.encode(block["text"]))
+
+        # Count tool call payloads (missed entirely before)
+        tool_calls = getattr(msg, "tool_calls", None)
+        if tool_calls:
+            for tc in tool_calls:
+                tc_text = f"{tc.get('name', '')} {str(tc.get('args', ''))}"
+                total += len(enc.encode(tc_text))
 
     return total
 
@@ -542,8 +667,9 @@ async def maybe_summarize(messages, summarizer_llm):
     return [summary_message] + fresh
 
 
-def log_latest_message(config):
-    messages = graph.get_state(config).values.get("messages", [])
+async def log_latest_message(config):
+    state = await graph.aget_state(config)
+    messages = state.values.get("messages", [])
 
     if not messages:
         return

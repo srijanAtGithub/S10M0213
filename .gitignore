@@ -12,6 +12,16 @@ wheels/
 .venv
 .env
 
+# Credentials & Tokens
+google_credentials.json
+gmail_token.json
+gmail_token_*.json
+
+# User specific data
+.chat_id
+Data/
+settings.json
+
 # Dev folders
 Notes/
 Helper Scripts And Files/
