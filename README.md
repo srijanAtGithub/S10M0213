@@ -12,7 +12,8 @@ You talk to it through Telegram like any other chat. Behind the scenes, it conne
 
 ## Architecture Overview
 
-![Main System Workflow](./Images/main_system_workflow.svg)
+![Main System Workflow](Images/main_system_workflow.svg)
+<img src="Images/context_trimming.svg" alt="Main System Workflow" width="70%">
 
 A message arrives via Telegram, passes through the FastAPI backend and session manager, then enters the LangGraph state graph. Inside the graph, the system prepares context (injecting relevant user preferences), fetches only the tools needed for this specific request, reasons with the main LLM, optionally pauses for human approval on destructive actions, executes tools, and sends back a response.
 
