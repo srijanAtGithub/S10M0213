@@ -1,15 +1,14 @@
 import json
-from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram import Update, BotCommand
+from telegram.ext import CommandHandler, ContextTypes
 
 from agent import tool_manager
 from connectors import CONNECTORS
 
-# CALLBACK PREFIXES  (inline button payloads)
-_CONNECT_PREFIX    = "connect:"
-_DISCONNECT_PREFIX = "disconnect:"
+# ──────────────────────────────────────────────────────────────────────────────
+# TELEGRAM COMMANDS EXECUTORS
+# ──────────────────────────────────────────────────────────────────────────────
 
-# CORE COMMANDS
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import main
 
@@ -26,30 +25,38 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def stop_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancel whatever is currently processing. No reply — just stop silently."""
+    """
+    Cancel whatever is currently processing for this user.
+    No reply to the user — just stop everything silently.
+    """
     import main
 
     user_id = str(update.effective_user.id)
     session = main._sessions.get(user_id)
-
+ 
     if session is None or not session.is_processing:
+        # Nothing running — silently do nothing.
         return
-
+ 
     print(
         f"\n🛑 /stop received"
         f"\n👤 User : {session.user_name} ({user_id})"
         f"\n🧵 Session: {session.session_id}\n"
     )
-
+ 
+    # Signal the cancel_check lambda inside send()
     session.cancel_requested = True
-
+ 
+    # Cancel the asyncio Task wrapping send()
     if session.active_task and not session.active_task.done():
         session.active_task.cancel()
+ 
+    # No reply, no acknowledgement — per spec.
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    import main
-
+    import main 
+    
     user_id = str(update.effective_user.id)
     session = main._sessions.get(user_id)
     if session:
@@ -63,25 +70,16 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No active session.")
 
 
-# CONNECTOR COMMANDS  (dynamic, driven by CONNECTORS registry)
 async def connectors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show all available connectors that are NOT yet loaded, as inline buttons."""
-    loaded = set(tool_manager.loaded_servers)
-    available = [name for name in CONNECTORS if name not in loaded]
+    available = "\n".join(f"• {name}" for name in CONNECTORS.keys())
 
-    if not available:
-        await update.message.reply_text("✅ All available connectors are already loaded.")
-        return
-
-    keyboard = _build_keyboard(available, prefix=_CONNECT_PREFIX)
     await update.message.reply_text(
-        "📦 Available connectors — tap one to connect:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        f"📦 Available connectors:\n\n"
+        f"{available}\n\n"
     )
 
 
 async def loaded_connectors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show all currently loaded MCP servers."""
     loaded = tool_manager.loaded_servers
     if not loaded:
         await update.message.reply_text("🔌 No connectors loaded currently.")
@@ -90,93 +88,90 @@ async def loaded_connectors_command(update: Update, context: ContextTypes.DEFAUL
     await update.message.reply_text(f"🔌 Loaded connectors:\n{text}")
 
 
-async def disconnect_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show loaded connectors as inline buttons — tap one to disconnect."""
+async def connect_swiggy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loaded = tool_manager.loaded_servers
-    if not loaded:
-        await update.message.reply_text("🔌 No connectors are currently loaded.")
+    if "swiggy-food" in loaded or "swiggy-instamart" in loaded:
+        await update.message.reply_text("⚠️ Swiggy is already connected.")
         return
-
-    keyboard = _build_keyboard(loaded, prefix=_DISCONNECT_PREFIX)
-    await update.message.reply_text(
-        "🔌 Loaded connectors — tap one to disconnect:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
+    await update.message.reply_text("⏳ Connecting Swiggy...")
+    await CONNECTORS["swiggy"](tool_manager)
+    await update.message.reply_text("✅ Swiggy connected! Food and Instamart tools are ready.")
 
 
-# INLINE BUTTON CALLBACKS
-async def on_connect_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fired when user taps a connector button from /connectors."""
-    query = update.callback_query
-    await query.answer()
+async def disconnect_swiggy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tool_manager.unregister("swiggy-food")
+    tool_manager.unregister("swiggy-instamart")
+    await update.message.reply_text("🗑️ Swiggy disconnected. All Swiggy tools unloaded.")
 
-    connector_name = query.data[len(_CONNECT_PREFIX):]
 
-    if connector_name not in CONNECTORS:
-        await query.edit_message_text(f"❌ Unknown connector: {connector_name}")
+async def connect_gmail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loaded = tool_manager.loaded_servers
+    if "gmail" in loaded:
+        await update.message.reply_text("⚠️ Gmail is already connected.")
         return
-
-    if connector_name in tool_manager.loaded_servers:
-        await query.edit_message_text(f"⚠️ {connector_name} is already connected.")
-        return
-
-    await query.edit_message_text(f"⏳ Connecting {connector_name}...")
-
+    
+    await update.message.reply_text("⏳ Connecting Gmail...\nBrowser will open for login.")
     try:
-        await CONNECTORS[connector_name](tool_manager)
-        await query.edit_message_text(f"✅ {connector_name} connected successfully!")
+        await CONNECTORS["gmail"](tool_manager)
+        await update.message.reply_text("✅ Gmail connected successfully!\nYou can now use Gmail tools.")
     except Exception as e:
-        await query.edit_message_text(f"❌ Failed to connect {connector_name}:\n{e}")
+        await update.message.reply_text(f"❌ Failed to connect Gmail:\n{str(e)}")
 
 
-async def on_disconnect_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Fired when user taps a server button from /disconnect."""
-    query = update.callback_query
-    await query.answer()
-
-    server_name = query.data[len(_DISCONNECT_PREFIX):]
-
-    tool_manager.unregister(server_name)
-    await query.edit_message_text(f"🗑️ {server_name} disconnected.")
+async def disconnect_gmail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tool_manager.unregister("gmail")
+    await update.message.reply_text("🗑️ Gmail disconnected.")
 
 
-# HELPERS
-def _build_keyboard(
-    names: list[str],
-    prefix: str,
-    columns: int = 2,
-) -> list[list[InlineKeyboardButton]]:
-    """Lay out buttons in a grid of `columns` per row."""
-    buttons = [
-        InlineKeyboardButton(name, callback_data=f"{prefix}{name}")
-        for name in names
-    ]
-    return [buttons[i : i + columns] for i in range(0, len(buttons), columns)]
+async def connect_telegram_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loaded = tool_manager.loaded_servers
+    if "telegram" in loaded:
+        await update.message.reply_text("⚠️ Telegram is already connected.")
+        return
+    
+    await update.message.reply_text("⏳ Connecting Telegram MCP...")
+    try:
+        await CONNECTORS["telegram"](tool_manager)
+        await update.message.reply_text("✅ Telegram connected successfully! You can now ask me to read or send messages.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to connect Telegram:\n{str(e)}")
 
 
+async def disconnect_telegram_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tool_manager.unregister("telegram")
+    await update.message.reply_text("🗑️ Telegram disconnected.")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # REGISTRATION HELPERS
+# ──────────────────────────────────────────────────────────────────────────────
 def setup_command_handlers(telegram_app):
-    """Attaches all command + callback handlers to the application."""
-    # Commands
-    telegram_app.add_handler(CommandHandler("start",             start_command))
-    telegram_app.add_handler(CommandHandler("stop",              stop_command))
-    telegram_app.add_handler(CommandHandler("status",            status_command))
-    telegram_app.add_handler(CommandHandler("connectors",        connectors_command))
+    """Attaches all command handlers to the application."""
+    telegram_app.add_handler(CommandHandler("start", start_command))
+    telegram_app.add_handler(CommandHandler("stop", stop_command))
+    telegram_app.add_handler(CommandHandler("status", status_command))
+    telegram_app.add_handler(CommandHandler("connectors", connectors_command))
     telegram_app.add_handler(CommandHandler("loaded_connectors", loaded_connectors_command))
-    telegram_app.add_handler(CommandHandler("disconnect",        disconnect_command))
-
-    # Inline button callbacks
-    telegram_app.add_handler(CallbackQueryHandler(on_connect_callback,    pattern=f"^{_CONNECT_PREFIX}"))
-    telegram_app.add_handler(CallbackQueryHandler(on_disconnect_callback, pattern=f"^{_DISCONNECT_PREFIX}"))
+    telegram_app.add_handler(CommandHandler("connect_swiggy", connect_swiggy_command))
+    telegram_app.add_handler(CommandHandler("disconnect_swiggy", disconnect_swiggy_command))
+    telegram_app.add_handler(CommandHandler("connect_gmail", connect_gmail_command))
+    telegram_app.add_handler(CommandHandler("disconnect_gmail", disconnect_gmail_command))
+    telegram_app.add_handler(CommandHandler("connect_telegram", connect_telegram_command))
+    telegram_app.add_handler(CommandHandler("disconnect_telegram", disconnect_telegram_command))
 
 
 async def setup_bot_commands(telegram_app):
-    """Sets the visible UI menu commands in Telegram (shown on '/')."""
+    """Sets the UI menu commands in Telegram."""
     await telegram_app.bot.set_my_commands([
         BotCommand("start",             "Start the bot"),
         BotCommand("stop",              "Stop the current process"),
         BotCommand("status",            "Show your session info"),
-        BotCommand("connectors",        "Connect a new service"),
+        BotCommand("connectors",        "Show available connectors"),
         BotCommand("loaded_connectors", "Show currently loaded connectors"),
-        BotCommand("disconnect",        "Disconnect a loaded connector"),
+        BotCommand("connect_swiggy",    "Connect Swiggy (food + instamart)"),
+        BotCommand("disconnect_swiggy", "Disconnect Swiggy tools"),
+        BotCommand("connect_gmail",     "Connect Gmail"),
+        BotCommand("disconnect_gmail",  "Disconnect Gmail"),
+        BotCommand("connect_telegram",  "Connect Telegram"),
+        BotCommand("disconnect_telegram", "Disconnect Telegram"),
     ])
