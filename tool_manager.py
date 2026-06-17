@@ -5,6 +5,9 @@ from langchain_core.tools import BaseTool
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
+import structlog
+log = structlog.get_logger()
+
 
 # Pydantic schema for router output
 class ServerSelection(BaseModel):
@@ -36,7 +39,7 @@ class ToolManager:
     # ── Registration ─────────────────────────────────────────
     async def register(self, tools: list[BaseTool], server: str, server_description: str | None = None):
         if any(e.server == server for e in self._registry):
-            print(f"⚠️  [{server}] already loaded — skipping")
+            log.warning("server_already_registered", server=server)
             return
 
         # Auto-generate description from tool descriptions if not provided
@@ -56,17 +59,19 @@ class ToolManager:
                 embedding=np.array(emb),
             ))
 
-        print(f"✅ Registered {len(tools)} tools from [{server}]")
-        for tool in tools:
-            print(f"   🔧 {tool.name}")
-            # print(f"{tool.description}")
+        # print(f"✅ Registered {len(tools)} tools from [{server}]")
+        # for tool in tools:
+        #     print(f"   🔧 {tool.name}")
+        #     # print(f"{tool.description}")
+
+        log.info("server_registered", server=server, tool_count=len(tools), tools=[t.name for t in tools])
 
 
     def unregister(self, server: str):
         before = len(self._registry)
         self._registry      = [e for e in self._registry if e.server != server]
         self._server_descriptions.pop(server, None)
-        print(f"🗑️  Unregistered [{server}] — removed {before - len(self._registry)} tools")
+        log.info("server_unregistered", server=server, removed=before - len(self._registry))
 
 
     @property
@@ -167,12 +172,12 @@ class ToolManager:
             valid = set(self._server_descriptions.keys())
             selected = [s for s in result.server_names if s in valid]
 
-            print(f"🌐 Relevant servers: {selected or '(none — conversational)'}")
+            log.info("relevant_servers", selected=selected or "none_conversational")
             return selected
 
         except Exception as e:
             # Non-fatal — fall back to all servers
-            print(f"⚠️  Server router failed ({e}) — falling back to all servers")
+            log.warning("server_router_failed", error=str(e), fallback="all servers")
             return list(self._server_descriptions.keys())
 
 
@@ -217,5 +222,5 @@ class ToolManager:
                 # Server has fewer tools than top_k, or no query — take all
                 result.extend(e.tool for e in server_entries)
 
-        print(f"🔍 Selected tools ({len(result)}): {[t.name for t in result]}")
+        log.info("tools_selected", count=len(result), tools=[t.name for t in result])
         return result

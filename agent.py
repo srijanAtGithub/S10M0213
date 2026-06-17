@@ -11,6 +11,9 @@ from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt, Command
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+import structlog
+log = structlog.get_logger()
+
 import tiktoken
 from langchain_core.messages import (SystemMessage, HumanMessage, AIMessage, ToolMessage)
 
@@ -328,13 +331,20 @@ async def initialize_agent():
 
         try:
             # BEFORE EXECUTION
-            print(f"\n🔧 Executing tool: {tool_call['name']}")
-            print(f"📦 Args: {tool_call['args']}")
+            log.info(
+                "Executing tool",
+                tool_name=tool_call["name"],
+                args=tool_call["args"]
+            )
 
             result = await asyncio.wait_for(tool.ainvoke(tool_call["args"]), timeout=45)
 
             # AFTER EXECUTION
-            print(f"✅ Tool result: {str(result)[:500]}\n")
+            log.info(
+                "Tool completed with result",
+                tool_name=tool_call["name"],
+                result=str(result)[:500]
+            )
 
             tool_call_entry["status"] = "success"
             tool_call_entry["result"] = str(result)[:500]
@@ -350,7 +360,11 @@ async def initialize_agent():
             } 
 
         except Exception as e:
-            traceback.print_exc()
+            log.exception(
+                "Tool execution failed",
+                tool_name=tool_call["name"],
+                args=tool_call["args"]
+            )
 
             tool_call_entry["status"] = "failed"
             tool_call_entry["error"] = str(e)
@@ -417,14 +431,14 @@ async def initialize_agent():
     checkpointer = AsyncSqliteSaver(conn)
     graph = builder.compile(checkpointer=checkpointer)
 
-    print("✅ LangGraph initialized")
+    log.info("LangGraph initialized")
 
 
 # Send message
 async def send(message: str, thread_id: str, status_callback=None, cancel_check=None):
 
     config = {"configurable": {"thread_id": thread_id}}
-    print(f"─── Thread: {thread_id} ───")
+    log.info("Thread started", thread_id=thread_id)
 
     if cancel_check and cancel_check():
         return {"reply": None, "interrupt": None}
@@ -443,13 +457,13 @@ async def send(message: str, thread_id: str, status_callback=None, cancel_check=
 
         # AUTO RESUME DETECTION
         if is_interrupted:
-            print(f"↩️ Resuming: {message}")
+            log.info("Resuming interrupted thread", message=message, thread_id=thread_id)
             async for event in graph.astream_events(Command(resume=message), config, version="v2"):
                 if event["event"] == "on_tool_start" and status_callback:
                     await status_callback(event.get("name", ""))
             await log_latest_message(config)
         else:
-            print(f"👤 User: {message}")
+            log.info("User message", message=message, thread_id=thread_id)
             async for event in graph.astream_events({"messages": [HumanMessage(content=message)]}, config, version="v2"):
                 if event["event"] == "on_tool_start" and status_callback:
                     await status_callback(event.get("name", ""))
@@ -459,7 +473,7 @@ async def send(message: str, thread_id: str, status_callback=None, cancel_check=
             return {"reply": None, "interrupt": None}
 
     except Exception as e:
-        print(f"❌ Graph execution failed: {e}")
+        log.exception("Graph execution failed", thread_id=thread_id)
 
         # IMPORTANT: Reset corrupted thread state by starting fresh
         return {
@@ -614,12 +628,12 @@ async def maybe_summarize(messages, summarizer_llm):
 
     token_count = count_tokens(messages)
 
-    print(f"🧠 Context tokens: {token_count}")
+    log.info("Context token count", token_count=token_count)
 
     if token_count < TOKEN_THRESHOLD:
         return messages
 
-    print("📝 Summarizing old conversation history...")
+    log.info("Summarizing old conversation history")
 
     # ---------------------------------------------------------
     # Preserve a structurally-safe recent window.
@@ -678,14 +692,13 @@ async def log_latest_message(config):
 
     msg_type = type(last).__name__
 
-    print(f"\n🤖 [{msg_type}]")
+    log.info("Latest message", message_type=msg_type)
 
     # AI tool calls
     if hasattr(last, "tool_calls") and last.tool_calls:
         for tc in last.tool_calls:
-            print(f"🔧 Tool Call: {tc['name']}")
-            print(f"📦 Args: {tc['args']}")
+            log.info("Tool call", tool_name=tc["name"], args=tc["args"])
 
     # Normal content
     if getattr(last, "content", None):
-        print(f"💬 {last.content}\n")
+        log.info("Latest message content", content=last.content)

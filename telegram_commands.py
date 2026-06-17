@@ -2,7 +2,6 @@ import json
 from telegram import Update, BotCommand
 from telegram.ext import CommandHandler, ContextTypes
 
-# Import your tools and connectors
 from agent import tool_manager
 from connectors import CONNECTORS
 

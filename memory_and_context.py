@@ -6,6 +6,9 @@ from pathlib import Path
 import asyncio
 import configuration
 
+import structlog
+log = structlog.get_logger()
+
 BASE_DIR = Path(__file__).resolve().parent
 SOUL_DIR = BASE_DIR / "Souls"
 CONTEXT_DIR = BASE_DIR / "Context"
@@ -119,7 +122,7 @@ async def _refresh_cache_if_needed(content: str) -> None:
         "lines":      lines,
         "embeddings": embeddings,
     })
-    print(f"🧠 Preferences cache refreshed — {len(lines)} line(s) embedded.")
+    log.info("preferences_cache_refreshed", lines_embedded=len(lines))
 
 
 async def get_relevant_preferences(query: str, top_k: int = 5, threshold: float = 0.35) -> str:
@@ -185,7 +188,7 @@ Bad examples (do NOT do these):
 
 async def run_evaluator(thread_id: str, messages: list[BaseMessage]) -> None:
     if not messages:
-        print("📊 Evaluator skipped — no messages in session.\n")
+        log.info("evaluator_skipped", reason="no messages in session")
         return
 
     allowed_types = {"HumanMessage", "AIMessage"}
@@ -197,7 +200,7 @@ async def run_evaluator(thread_id: str, messages: list[BaseMessage]) -> None:
     )
 
     if not conversation_text.strip():
-        print("📊 Evaluator skipped — all messages were empty.\n")
+        log.info("evaluator_skipped", reason="all messages were empty")
         return
 
     EVAL_LLM_SOUL = get_system_message("eval_llm")
@@ -214,13 +217,11 @@ async def run_evaluator(thread_id: str, messages: list[BaseMessage]) -> None:
             )),
         ])
     except Exception as e:
-        print(f"❌ Preference extraction failed: {e}")
+        log.error("preference_extraction_failed", error=str(e))
         return
 
     session_preferences = extraction_result.content.strip()
-    print("\n📊 Session Preferences Extracted:\n")
-    print(session_preferences)
-    print()
+    log.info("session_preferences_extracted", content=session_preferences)
 
     async with _file_lock:
         # ── Step 2: Load existing ─────────────────────────────────────────────────
@@ -228,7 +229,7 @@ async def run_evaluator(thread_id: str, messages: list[BaseMessage]) -> None:
 
         if not existing_preferences.strip():
             save_to_preferences_file(session_preferences)
-            print("✅ preferences.md created.\n")
+            log.info("preferences_file_created")
             return
 
         # ── Step 3: Merge ─────────────────────────────────────────────────────────
@@ -238,12 +239,12 @@ async def run_evaluator(thread_id: str, messages: list[BaseMessage]) -> None:
                 new_preferences=session_preferences,
             )
         except Exception as e:
-            print(f"❌ Preference merge failed: {e}")
+            log.error("preference_merge_failed", error=str(e))
             return
 
         # ── Step 4: Save ──────────────────────────────────────────────────────────
         save_to_preferences_file(merged_preferences)
-        print("✅ preferences.md updated.\n")
+        log.info("preferences_file_updated")
 
 
 async def merge_preferences(existing_preferences: str, new_preferences: str) -> str:
