@@ -21,6 +21,7 @@ dependencies = [
     "langsmith>=0.8.3",
     "numpy>=2.4.6",
     "openai>=2.36.0",
+    "pytest>=9.0.3",
     "python-dotenv>=1.2.2",
     "python-telegram-bot>=22.7",
     "pyyaml>=6.0.3",
