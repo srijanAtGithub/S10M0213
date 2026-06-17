@@ -27,7 +27,16 @@ def load_preferences_file() -> str:
 
 def save_to_preferences_file(content: str) -> None:
     CONTEXT_DIR.mkdir(parents=True, exist_ok=True)
-    PREFERENCES_FILE.write_text(content.strip() + "\n", encoding="utf-8")
+    
+    # 1. Create a temporary file path
+    temp_file = PREFERENCES_FILE.with_suffix('.tmp')
+    
+    # 2. Write the data to the temporary file
+    temp_file.write_text(content.strip() + "\n", encoding="utf-8")
+    
+    # 3. Atomically swap it. This replaces the old file instantly.
+    # If the server crashes during step 2, the original preferences.md is safe.
+    temp_file.replace(PREFERENCES_FILE)
 
 
 # Preferences: line parsing
