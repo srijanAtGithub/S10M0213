@@ -11,6 +11,9 @@ import traceback
 import json
 from pathlib import Path
 
+import structlog
+log = structlog.get_logger()
+
 load_dotenv()
 
 import uvicorn
@@ -71,7 +74,7 @@ async def expire_session_after_timeout(user_id: str, session_id: str, user_name:
         sleep_duration = override_seconds if override_seconds is not None else IDLE_MINUTES * 60
         await asyncio.sleep(sleep_duration)
     except asyncio.CancelledError:
-        print(f"🔄 Session timer reset for user {user_id} ({user_name})")
+        log.info("Session timer reset", user_id=user_id, user_name=user_name)
         return
 
     # ── Guard: session might have already been replaced ───────────────────
@@ -81,12 +84,13 @@ async def expire_session_after_timeout(user_id: str, session_id: str, user_name:
         return
 
     # ── Print expiry header ───────────────────────────────────────────────
-    print(
-        f"\n⏰ SESSION EXPIRED"
-        f"\n👤 User      : {user_name} ({user_id})"
-        f"\n🧵 Session ID : {session_id}"
-        f"\n🕒 Started   : {format_time(session.started_at)}"
-        f"\n🕒 Last msg  : {format_time(session.last_interaction_at)}\n"
+    log.info(
+        "Session expired",
+        user_id=user_id,
+        user_name=user_name,
+        session_id=session_id,
+        started_at=format_time(session.started_at),
+        last_message_at=format_time(session.last_interaction_at),
     )
 
     try:
@@ -96,7 +100,7 @@ async def expire_session_after_timeout(user_id: str, session_id: str, user_name:
         # Accessing the live graph via the module, not the stale imported None
         current_graph = agent_module.graph
         if current_graph is None:
-            print("⚠️  Graph not yet initialized — skipping evaluator.")
+            log.warning("Graph not yet initialized, skipping evaluator")
             return
 
         state = await current_graph.aget_state(config)
@@ -104,7 +108,7 @@ async def expire_session_after_timeout(user_id: str, session_id: str, user_name:
 
         if messages:
 
-            print("📜 SESSION MESSAGE HISTORY:\n")
+            log.info("Session message history")
 
             for msg in messages:
                 msg_type = type(msg).__name__
@@ -112,22 +116,21 @@ async def expire_session_after_timeout(user_id: str, session_id: str, user_name:
                 if content:
                     # truncate very long tool results so the log stays readable
                     display = content if len(content) <= 300 else content[:300] + "…"
-                    print(f"  [{msg_type}] {display}\n")
+                    log.info("Session message", message_type=msg_type, content=display)
 
         else:
-            print("📜 No messages in this session.\n")
+            log.info("No messages in session")
 
         # ── Run evaluator on session messages ─────────────────────────────────
         await run_evaluator(session.session_id, messages)
 
     except Exception as e:
-        print(f"❌ Error during session expiry for {user_id}: {e}", flush=True)
-        traceback.print_exc()  
+        log.exception("Error during session expiry", user_id=user_id)
 
     finally:
         _sessions.pop(user_id, None)
         await delete_session(user_id)
-        print("🗑️  Session removed from store.\n")
+        log.info("Session removed from store", user_id=user_id)
 
 
 # Session store logic
@@ -167,10 +170,11 @@ async def get_or_create_session(user_id: str, user_name: str) -> tuple[str, bool
         # Expired during downtime — delete and treat as new session
         if remaining <= 0:
             await delete_session(user_id)
-            print(
-                f"\n🗑️ SESSION EXPIRED DURING DOWNTIME"
-                f"\n👤 User      : {user_name} ({user_id})"
-                f"\n🧵 Session ID: {persisted.session_id[:8]}...\n"
+            log.info(
+                "Session expired during downtime",
+                user_id=user_id,
+                user_name=user_name,
+                session_id=persisted.session_id
             )
         else:
             # Still valid — restore it
@@ -181,10 +185,11 @@ async def get_or_create_session(user_id: str, user_name: str) -> tuple[str, bool
                 last_interaction_at=time.time(),
             )
             _sessions[user_id] = session
-            print(
-                f"\n♻️ RESTORED SESSION"
-                f"\n👤 User      : {user_name} ({user_id})"
-                f"\n🧵 Session ID: {persisted.session_id[:8]}...\n"
+            log.info(
+                "Restored session",
+                user_id=user_id,
+                user_name=user_name,
+                session_id=persisted.session_id
             )
             return session.session_id, False
 
@@ -240,11 +245,12 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         session.expiry_task = asyncio.create_task(
             expire_session_after_timeout(user_id, session_id, user_name)
         )
-        print(
-            f"\n🆕 NEW SESSION"
-            f"\n👤 User      : {user_name} ({user_id})"
-            f"\n🧵 Session ID: {session_id}"
-            f"\n🕒 Started   : {format_time(session.started_at)}\n"
+        log.info(
+            "New session created",
+            user_id=user_id,
+            user_name=user_name,
+            session_id=session_id,
+            started_at=format_time(session.started_at)
         )
 
     else:
@@ -256,13 +262,13 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             expire_session_after_timeout(user_id, session_id, user_name)
         )
 
-    print(
-        f"\n📨 [Telegram Message]"
-        f"\n👤 User      : {user_name} ({user_id})"
-        f"\n🧵 Session ID: {session_id}"
-        f"\n🕒 Since     : {format_time(session.started_at)}"
-        f"\n💬 Message   : {text}\n",
-        flush=True
+    log.info(
+    "Telegram message received",
+        user_id=user_id,
+        user_name=user_name,
+        session_id=session_id,
+        message=text,
+        session_started_at=format_time(session.started_at)
     )
 
     # ── Mark busy ─────────────────────────────────────────────────────────────
@@ -317,10 +323,10 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
     except asyncio.CancelledError:
         # /stop fired — task was cancelled externally. Say nothing. Do nothing.
-        print(f"🛑 Task cancelled for user {user_name} ({user_id})")
+        log.info("Task cancelled", user_id=user_id, user_name=user_name)
 
     except Exception as e:
-        print(f"❌ Error in send(): {e}", flush=True)
+        log.exception("Error in send")
         if not session.cancel_requested:
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -354,33 +360,28 @@ def load_persisted_chat_id() -> int | None:
 async def dispatch_recurring_task(task_id: str, task_text: str):
     session_id = str(uuid.uuid4())
 
-    print(
-        f"\n⏰ RECURRING TASK DISPATCH"
-        f"\n🆔 Task      : {task_id}"
-        f"\n🧵 Session ID : {session_id}\n",
-        flush=True
-    )
+    log.info("Recurring task dispatched", task_id=task_id, session_id=session_id)
 
     try:
         result = await send(task_text, session_id)
     except Exception as e:
-        print(f"❌ Recurring task agent error [{task_id}]: {e}", flush=True)
+        log.exception("Recurring task agent error", task_id=task_id)
         return
 
     reply = result.get("reply") or result.get("interrupt")
     if not reply:
-        print(f"⚠️  No reply from agent for task {task_id}")
+        log.warning("No reply from agent", task_id=task_id)
         return
 
     if active_chat_id is None:
-        print(f"⚠️  No active Telegram chat for task {task_id} — reply dropped.")
+        log.warning("No active Telegram chat, reply dropped", task_id=task_id)
         return
 
     try:
         await telegram_app.bot.send_message(chat_id=active_chat_id, text=reply)
-        print(f"✉️  Recurring task [{task_id}] reply sent.")
+        log.info("Recurring task reply sent", task_id=task_id)
     except Exception as e:
-        print(f"❌ Failed to send recurring task reply [{task_id}]: {e}", flush=True)
+        log.exception("Failed to send recurring task reply", task_id=task_id)
     
     
 @asynccontextmanager
@@ -401,10 +402,11 @@ async def lifespan(app: FastAPI):
         # Session should have expired while server was down — clean it up
         if remaining <= 0:
             await delete_session(uid)
-            print(
-                f"\n🗑️ EXPIRED DURING DOWNTIME (skipped restore)"
-                f"\n👤 User      : {p.user_name} ({uid})"
-                f"\n🧵 Session ID: {p.session_id[:8]}...\n"
+            log.warning(
+                "Session expired during downtime, skipped restore",
+                user_id=uid, 
+                user_name=p.user_name, 
+                session_id=p.session_id
             )
             continue
 
@@ -422,22 +424,23 @@ async def lifespan(app: FastAPI):
             expire_session_after_timeout(uid, p.session_id, p.user_name, override_seconds=remaining)
         )
 
-        print(
-            f"\n♻️ RESTORED SESSION"
-            f"\n👤 User      : {p.user_name} ({uid})"
-            f"\n🧵 Session ID: {p.session_id[:8]}..."
-            f"\n⏳ Expires in: {remaining:.0f}s\n"
+        log.info(
+            "Session restored",
+            user_id=uid,
+            user_name=p.user_name,
+            session_id=p.session_id,
+            expires_in_seconds=round(remaining),
         )
 
     if persisted:
-        print(f"♻️  Restored {len(_sessions)} valid session(s) from DB")
+        log.info("Sessions restored from DB", count=len(_sessions))
 
     saved = load_persisted_chat_id()
     if saved:
         active_chat_id = saved
-        print(f"Loaded persisted chat_id: {active_chat_id}")
+        log.info("Loaded persisted chat id", chat_id=active_chat_id)
     else:
-        print("No chat_id yet — user must send /start first.")
+        log.warning("No chat id available yet")
 
     telegram_app = Application.builder().token(TOKEN).concurrent_updates(True).build()
 
@@ -450,7 +453,7 @@ async def lifespan(app: FastAPI):
     await setup_bot_commands(telegram_app)
     await telegram_app.updater.start_polling()
 
-    print("🤖 Telegram bot is running...")
+    log.info("Telegram bot is running...")
 
     set_dispatch(dispatch_recurring_task)
 
@@ -470,7 +473,7 @@ async def lifespan(app: FastAPI):
     ]
  
     if processing_sessions:
-        print(f"\n ⚠️ Shutdown: {len(processing_sessions)} active session(s) in progress. Notifying users...")
+        log.warning("Shutdown with active sessions", active_sessions=len(processing_sessions))
  
         notify_tasks = []
         for uid, session in processing_sessions:
@@ -490,7 +493,7 @@ async def lifespan(app: FastAPI):
                             )
                         )
                 except Exception as e:
-                    print(f"⚠️  Could not notify user {s.user_name}: {e}")
+                    log.warning("Could not notify user", user_name=s.user_name, error=str(e))
  
             notify_tasks.append(asyncio.create_task(_notify()))
  
@@ -505,11 +508,11 @@ async def lifespan(app: FastAPI):
         ]
  
         if active_tasks:
-            print(f"⏳ Waiting up to {GRACEFUL_DRAIN_TIMEOUT}s for {len(active_tasks)} task(s)...")
+            log.info("Waiting for task drain", timeout_seconds=GRACEFUL_DRAIN_TIMEOUT, task_count=len(active_tasks))
             _, pending = await asyncio.wait(active_tasks, timeout=GRACEFUL_DRAIN_TIMEOUT)
  
             if pending:
-                print(f"🔨 Force-cancelling {len(pending)} task(s) that did not finish in time.")
+                log.warning("Force cancelling tasks", task_count=len(pending))
                 for t in pending:
                     t.cancel()
                 await asyncio.gather(*pending, return_exceptions=True)
@@ -541,7 +544,7 @@ async def root():
 
 @app.get("/callback")
 async def oauth_callback(code: str, state: str | None = None):
-    print("✅ OAuth callback received", flush=True)
+    log.info("OAuth callback received")
 
     if Auth.swiggy_auth._oauth_code_future and not Auth.swiggy_auth._oauth_code_future.done():
         Auth.swiggy_auth._oauth_code_future.set_result(code)
@@ -563,7 +566,7 @@ async def send_to_telegram(text: str):
 
     await telegram_app.bot.send_message(chat_id=active_chat_id, text=text)
 
-    print(f"✉️ [Sent to Telegram]: {text}")
+    log.info("Message sent to Telegram", text=text)
 
     return {"status": "sent", "text": text}
 
@@ -571,7 +574,7 @@ async def send_to_telegram(text: str):
 # Entry
 def main():
     init_settings()
-    print("S10M0213 started successfully.")
+    log.info("S10M0213 started successfully.")
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
