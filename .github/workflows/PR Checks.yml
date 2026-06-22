@@ -1,0 +1,92 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # Check 1: The Tests
+  test:
+    name: Run pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --group dev
+
+      - name: Run tests
+        run: uv run pytest Tests/ -v
+
+  # Check 2: The Version Bump Verification
+  check-version:
+    name: Verify Version Bump
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Check version is bumped vs PyPI
+        run: |
+          # Read the version from pyproject.toml
+          LOCAL_VERSION=$(python -c "
+          import tomllib
+          with open('pyproject.toml', 'rb') as f:
+              data = tomllib.load(f)
+          print(data['project']['version'])
+          ")
+
+          echo "Local version:  $LOCAL_VERSION"
+
+          # Fetch the latest published version from PyPI
+          PYPI_RESPONSE=$(curl -s https://pypi.org/pypi/s10m0213/json || echo "NOT_FOUND")
+
+          if echo "$PYPI_RESPONSE" | grep -q "NOT_FOUND\|Not Found\|404"; then
+            echo "Package not yet on PyPI — first publish, skipping version check."
+          else
+            PYPI_VERSION=$(echo "$PYPI_RESPONSE" | python -c "
+          import sys, json
+          data = json.load(sys.stdin)
+          print(data['info']['version'])
+            ")
+
+            echo "PyPI version:   $PYPI_VERSION"
+
+            # Compare using Python's packaging library (available in uv environments)
+            VERSION_OK=$(python -c "
+          from packaging.version import Version
+          local = Version('$LOCAL_VERSION')
+          pypi  = Version('$PYPI_VERSION')
+          print('yes' if local > pypi else 'no')
+            ")
+
+            if [ "$VERSION_OK" != "yes" ]; then
+              echo ""
+              echo "ERROR: Version in pyproject.toml ($LOCAL_VERSION) must be greater than"
+              echo "       the current PyPI version ($PYPI_VERSION)."
+              echo "       Please bump the version before merging to main."
+              exit 1
+            fi
+
+            echo "Version check passed: $LOCAL_VERSION > $PYPI_VERSION"
+          fi
