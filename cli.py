@@ -1,4 +1,4 @@
-from click import click
+import click
 from pathlib import Path
 import shutil
 
@@ -46,3 +46,10 @@ def init():
     click.echo("  1. Edit Souls/*.md to define your agent's personality")
     click.echo("  2. Fill in settings.example.json and rename it to settings.json")
     click.echo("  3. s10m0213 run")
+
+
+@main_cli.command()
+def run():
+    """Start the S10M0213 agent."""
+    from main import main
+    main()
