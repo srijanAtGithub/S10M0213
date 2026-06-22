@@ -2,7 +2,6 @@ import json
 from telegram import Update, BotCommand
 from telegram.ext import CommandHandler, ContextTypes
 
-# Import your tools and connectors
 from agent import tool_manager
 from connectors import CONNECTORS
 
@@ -143,6 +142,25 @@ async def disconnect_telegram_command(update: Update, context: ContextTypes.DEFA
     await update.message.reply_text("🗑️ Telegram disconnected.")
 
 
+async def connect_tavily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loaded = tool_manager.loaded_servers
+    if "tavily" in loaded:
+        await update.message.reply_text("⚠️ Tavily is already connected.")
+        return
+    
+    await update.message.reply_text("⏳ Connecting Tavily MCP...")
+    try:
+        await CONNECTORS["tavily"](tool_manager)
+        await update.message.reply_text("✅ Tavily connected successfully!\nYou can now use search and web tools.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to connect Tavily:\n{str(e)}")
+
+
+async def disconnect_tavily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tool_manager.unregister("tavily")
+    await update.message.reply_text("🗑️ Tavily disconnected.")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # REGISTRATION HELPERS
 # ──────────────────────────────────────────────────────────────────────────────
@@ -159,6 +177,8 @@ def setup_command_handlers(telegram_app):
     telegram_app.add_handler(CommandHandler("disconnect_gmail", disconnect_gmail_command))
     telegram_app.add_handler(CommandHandler("connect_telegram", connect_telegram_command))
     telegram_app.add_handler(CommandHandler("disconnect_telegram", disconnect_telegram_command))
+    telegram_app.add_handler(CommandHandler("connect_tavily", connect_tavily_command))
+    telegram_app.add_handler(CommandHandler("disconnect_tavily", disconnect_tavily_command))
 
 
 async def setup_bot_commands(telegram_app):
@@ -175,4 +195,6 @@ async def setup_bot_commands(telegram_app):
         BotCommand("disconnect_gmail",  "Disconnect Gmail"),
         BotCommand("connect_telegram",  "Connect Telegram"),
         BotCommand("disconnect_telegram", "Disconnect Telegram"),
+        BotCommand("connect_tavily",    "Connect Tavily search"),
+        BotCommand("disconnect_tavily", "Disconnect Tavily"),
     ])
