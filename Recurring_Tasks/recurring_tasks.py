@@ -5,7 +5,7 @@ from pathlib import Path
 
 from datetime import datetime, timedelta
 
-YAML_FILE = Path(__file__).resolve().parent / "recurring_tasks.yaml"
+YAML_FILE = Path.cwd() / "Recurring_Tasks" / "recurring_tasks.yaml"
 
 _dispatch = None
 
