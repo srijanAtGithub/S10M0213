@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",
+    "cryptography>=48.0.1",
     "fastapi>=0.136.1",
     "google-auth>=2.53.0",
     "google-auth-oauthlib>=1.4.0",
@@ -25,11 +26,14 @@ dependencies = [
     "langsmith>=0.8.3",
     "numpy>=2.4.6",
     "openai>=2.36.0",
+    "pyjwt>=2.13.0",
     "pytest>=9.0.3",
     "python-dotenv>=1.2.2",
+    "python-multipart>=0.0.30",
     "python-telegram-bot>=22.7",
     "pyyaml>=6.0.3",
     "requests>=2.34.0",
+    "starlette>=1.1.0",
     "structlog>=26.1.0",
     "tiktoken>=0.13.0",
     "uvicorn>=0.46.0",
@@ -43,7 +47,18 @@ dev = [
     "pytest>=9.0.3",
 ]
 
-[tool.hatchling.build.targets.wheel]
+[tool.hatch.build.targets.sdist]
+include = [
+    "*.py",
+    "Auth/**",
+    "Context/**",
+    "Recurring_Tasks/**",
+    "Souls/**",
+    "settings.example.json",
+    "pyproject.toml",
+    "README.md",
+]
+[tool.hatch.build.targets.wheel]
 include = [
     "*.py",
     "Auth/**",

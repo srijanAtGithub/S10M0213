@@ -6,6 +6,7 @@ PROVIDER = "openai"
 
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
+from openai import AsyncOpenAI
 
 
 def get_main_llm(tools=None):
@@ -45,6 +46,10 @@ def get_summarizer_llm():
         return ChatOpenAI(model="gpt-4o-mini", temperature=0)
     elif PROVIDER == "google":
         return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0) 
+
+def get_transcriber() -> AsyncOpenAI:
+    """Returns an AsyncOpenAI client for voice transcription via gpt-4o-mini-transcribe."""
+    return AsyncOpenAI()
 
 
 TOOL_LABELS = {

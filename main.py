@@ -7,7 +7,6 @@ import Auth.swiggy_auth
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from datetime import datetime
-import traceback
 import json
 from pathlib import Path
 
@@ -25,7 +24,7 @@ from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from telegram_commands import setup_command_handlers, setup_bot_commands
 import agent as agent_module
 from agent import initialize_agent, send
-from configuration import TOOL_LABELS
+from configuration import TOOL_LABELS, get_transcriber
 from memory_and_context import run_evaluator
 from Recurring_Tasks.recurring_tasks import start_recurring_tasks, set_dispatch
 from session_store import init_db, load_all_sessions, load_session, save_session, delete_session
@@ -447,6 +446,7 @@ async def lifespan(app: FastAPI):
     setup_command_handlers(telegram_app)
 
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_telegram_message))
+    telegram_app.add_handler(MessageHandler(filters.VOICE, on_voice_message))
 
     await telegram_app.initialize()
     await telegram_app.start()
@@ -527,6 +527,24 @@ async def lifespan(app: FastAPI):
     await telegram_app.shutdown()
 
 
+async def on_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    voice = update.message.voice
+    tg_file = await context.bot.get_file(voice.file_id)
+    audio_bytes = await tg_file.download_as_bytearray()
+
+    client = get_transcriber()
+    transcription = await client.audio.transcriptions.create(
+        model="gpt-4o-mini-transcribe",
+        file=("voice.ogg", bytes(audio_bytes), "audio/ogg"),
+    )
+    text = transcription.text.strip()
+
+    log.info("Voice note transcribed", text=text)
+
+    update.message.text = text
+    await on_telegram_message(update, context)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # FastAPI app
 # ──────────────────────────────────────────────────────────────────────────────
@@ -583,7 +601,7 @@ def init_settings():
         settings = json.load(f)
 
     # Sync .env
-    ENV_KEYS = ["TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY"]
+    ENV_KEYS = ["TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "TAVILY_API_KEY"]
     
     env = {}
     if Path(".env").exists():

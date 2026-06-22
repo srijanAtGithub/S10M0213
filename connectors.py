@@ -2,6 +2,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from Auth.swiggy_auth import get_valid_token
 from Auth.gmail_auth import get_gmail_token
 from Auth.telegram_auth import get_telegram_config
+from Auth.tavily_auth import get_tavily_config
 
 from configuration import TELEGRAM_BLACKLIST
 
@@ -68,9 +69,25 @@ async def load_telegram_tools(tool_manager):
     await tool_manager.register(filtered_tools, "telegram")
 
 
+async def load_tavily_tools(tool_manager):
+    env = await get_tavily_config()
+    
+    tavily_client = MultiServerMCPClient({
+        "tavily": {
+            "transport": "stdio",
+            "command": "npx",
+            "args": ["-y", "tavily-mcp@0.1.4"],
+            "env": env,
+        }
+    })
+    tools = await tavily_client.get_tools()
+    await tool_manager.register(tools, "tavily")
+
+
 # Registry of all available connectors — add new ones here
 CONNECTORS = {
     "swiggy":      load_swiggy_tools,
     "gmail":       load_gmail_tools,
-    "telegram":  load_telegram_tools,
+    "telegram":    load_telegram_tools,
+    "tavily":      load_tavily_tools,
 }
