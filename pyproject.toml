@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "s10m0213"
 version = "0.1.0"
@@ -31,7 +35,20 @@ dependencies = [
     "uvicorn>=0.46.0",
 ]
 
+[project.scripts]
+s10m0213 = "cli:main_cli"
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
+]
+
+[tool.hatchling.build.targets.wheel]
+include = [
+    "*.py",
+    "Auth/**",
+    "Context/**",
+    "Recurring_Tasks/**",
+    "Souls/**",
+    "settings.example.json",
 ]
