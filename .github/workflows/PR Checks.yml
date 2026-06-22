@@ -72,8 +72,8 @@ jobs:
 
             echo "PyPI version:   $PYPI_VERSION"
 
-            # Compare using Python's packaging library (available in uv environments)
-            VERSION_OK=$(python -c "
+            # Compare using uv to temporarily install 'packaging'
+            VERSION_OK=$(uv run --with packaging -- python -c "
           from packaging.version import Version
           local = Version('$LOCAL_VERSION')
           pypi  = Version('$PYPI_VERSION')
