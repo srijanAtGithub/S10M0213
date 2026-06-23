@@ -2,7 +2,7 @@ import click
 from pathlib import Path
 import shutil
 
-main_cli = click.Group(name="s10m0213", help="S10M0213 — State-Locked Autonomous Agent")
+main_cli = click.Group(name="sicily", help="Sicily — State-Locked Autonomous Agent")
 
 @main_cli.command()
 def init():
@@ -45,11 +45,11 @@ def init():
     click.echo("\n📝 Next steps:")
     click.echo("  1. Edit Souls/*.md to define your agent's personality")
     click.echo("  2. Fill in settings.example.json and rename it to settings.json")
-    click.echo("  3. s10m0213 run")
+    click.echo("  3. sicily run")
 
 
 @main_cli.command()
 def run():
-    """Start the S10M0213 agent."""
+    """Start the Sicily agent."""
     from main import main
     main()
