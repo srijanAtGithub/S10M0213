@@ -53,3 +53,11 @@ def run():
     """Start the Sicily agent."""
     from main import main
     main()
+
+
+@main_cli.command()
+def start():
+    """Start a local terminal session with sandboxed file access."""
+    import asyncio
+    from local_session import run_local_session
+    asyncio.run(run_local_session())
