@@ -18,7 +18,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         main.CHAT_ID_FILE.write_text(json.dumps({"chat_id": main.active_chat_id}))
         print(f"💾 Registered chat_id: {main.active_chat_id} for user {update.effective_user.first_name}")
         await update.message.reply_text(
-            "👋 Hi! I'm S10M0213. You're all set up.."
+            "👋 Hi! I'm Sicily. You're all set up.."
         )
     else:
         await update.message.reply_text("👋 Hey! Already registered. Ready to go.")

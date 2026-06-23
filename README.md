@@ -1,8 +1,8 @@
-# S10M0213 — State-Locked Autonomous Agent Framework & Resilient Tool Orchestrator
+# Sicily — State-Locked Autonomous Agent Framework & Resilient Tool Orchestrator
 
 A production-grade, cost-efficient, and crash-resilient AI runtime powered by **LangGraph** and **Multi-Transport MCP**. Operating through an asynchronous **Telegram** interface, it can coordinate external tools, execute recurring tasks, maintain long-term memory, and persist workflow state across restarts.
 
-Designed as a persistent personal agent, S10M0213 emphasizes efficient reasoning, safe automation, and operational reliability.
+Designed as a persistent personal agent, Sicily emphasizes efficient reasoning, safe automation, and operational reliability.
 
 The system is built around five core principles:
 

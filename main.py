@@ -592,7 +592,7 @@ async def send_to_telegram(text: str):
 # Entry
 def main():
     init_settings()
-    log.info("S10M0213 started successfully.")
+    log.info("Sicily started successfully.")
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
