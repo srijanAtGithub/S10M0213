@@ -1705,9 +1705,9 @@ wheels = [
 ]
 
 [[package]]
-name = "s10m0213"
-version = "0.1.0"
-source = { virtual = "." }
+name = "sicily"
+version = "0.2.2"
+source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "cryptography" },
