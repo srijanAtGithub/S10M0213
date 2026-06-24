@@ -4,7 +4,6 @@ import time
 import asyncio
 import Auth.swiggy_auth
 
-from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
@@ -13,8 +12,8 @@ from pathlib import Path
 import structlog
 log = structlog.get_logger()
 
-SICILY_HOME = Path.home() / ".sicily"
-load_dotenv(SICILY_HOME / ".env")
+from configuration import load_config
+load_config()
 
 import uvicorn
 from contextlib import asynccontextmanager
@@ -600,27 +599,8 @@ def main():
 SICILY_HOME = Path.home() / ".sicily"
 
 def init_settings():
-    settings_path = SICILY_HOME / "settings.json"
-    env_path = SICILY_HOME / ".env"
-
-    with open(settings_path) as f:
-        settings = json.load(f)
-
-    # Sync .env
-    ENV_KEYS = ["TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY", "TAVILY_API_KEY"]
-    
-    env = {}
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            if line.strip() and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
-
-    for key in ENV_KEYS:
-        if settings.get(key):
-            env[key] = settings[key]
-
-    env_path.write_text("\n".join(f'{k}={v}' for k, v in env.items()) + "\n")
+    """Deprecated — now handled by configuration.load_config()"""
+    pass
 
 
 if __name__ == "__main__":
