@@ -601,7 +601,7 @@ def init_settings():
         settings = json.load(f)
 
     # Sync .env
-    ENV_KEYS = ["TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "TAVILY_API_KEY"]
+    ENV_KEYS = ["TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY", "TAVILY_API_KEY"]
     
     env = {}
     if Path(".env").exists():
@@ -615,10 +615,6 @@ def init_settings():
             env[key] = settings[key]
 
     Path(".env").write_text("\n".join(f'{k}={v}' for k, v in env.items()) + "\n")
-
-    # Sync configuration.py
-    import configuration
-    configuration.PROVIDER = settings.get("AI_PROVIDER")
 
 
 if __name__ == "__main__":
