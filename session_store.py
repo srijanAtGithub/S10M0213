@@ -16,7 +16,8 @@ import aiosqlite
 from dataclasses import dataclass
 from pathlib import Path
 
-DB_PATH = Path("Data/bot_state.db")
+SICILY_HOME = Path.home() / ".sicily"
+DB_PATH = SICILY_HOME / "Data" / "bot_state.db"
 
 
 @dataclass

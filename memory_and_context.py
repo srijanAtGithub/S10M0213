@@ -9,9 +9,9 @@ import configuration
 import structlog
 log = structlog.get_logger()
 
-# BASE_DIR = Path(__file__).resolve().parent
-SOUL_DIR = Path.cwd() / "Souls"
-CONTEXT_DIR = Path.cwd() / "Context"
+SICILY_HOME = Path.home() / ".sicily"
+SOUL_DIR = SICILY_HOME / "Souls"
+CONTEXT_DIR = SICILY_HOME / "Context"
 PREFERENCES_FILE = CONTEXT_DIR / "preferences.md"
 
 eval_llm = configuration.get_eval_llm()

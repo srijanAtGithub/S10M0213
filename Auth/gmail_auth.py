@@ -1,5 +1,6 @@
 import os
 import socket
+from pathlib import Path
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -10,24 +11,25 @@ SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 
-CREDENTIALS_FILE = "google_credentials.json"
+SICILY_HOME = Path.home() / ".sicily"
+CREDENTIALS_FILE = SICILY_HOME / "google_credentials.json"
 PORT = 8080
 
 
 async def get_gmail_token() -> str:
     """Get Gmail token, handling stale port from cancelled auth flows."""
 
-    token_file = "gmail_token.json"
+    token_file = SICILY_HOME / "gmail_token.json"
     creds = None
 
-    if os.path.exists(token_file):
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+    if token_file.exists():
+        creds = Credentials.from_authorized_user_file(str(token_file), SCOPES)
 
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
 
     elif not creds or not creds.valid:
-        if not os.path.exists(CREDENTIALS_FILE):
+        if not CREDENTIALS_FILE.exists():
             raise FileNotFoundError(f"❌ {CREDENTIALS_FILE} not found!")
 
         # --- Free the port if it's stuck from a previous cancelled flow ---
@@ -41,7 +43,7 @@ async def get_gmail_token() -> str:
             prompt='consent'
         )
 
-    with open(token_file, "w") as f:
+    with open(str(token_file), "w") as f:
         f.write(creds.to_json())
 
     return creds.token
