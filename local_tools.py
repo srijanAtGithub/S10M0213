@@ -10,6 +10,20 @@ ALL tools are locked to a single root directory (the cwd where
 from pathlib import Path
 from langchain_core.tools import tool
 
+# ── Directories to always skip ────────────────────────────────────────────────
+# These are typically huge and never useful to browse (venvs, caches, VCS, etc.)
+SKIP_DIRS = {
+    ".venv", "venv", "env", ".env",
+    "node_modules",
+    "__pycache__",
+    ".git",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    "dist", "build", ".eggs",
+    ".tox", ".nox",
+    ".idea", ".vscode",
+}
+
+
 # ── Sandbox root ──────────────────────────────────────────────────────────────
 # Set once at startup by local_session.py before any tool is called.
 _SANDBOX_ROOT: Path | None = None
@@ -41,13 +55,19 @@ def _safe_path(relative: str) -> Path:
     return resolved
 
 
+def _is_skipped(path: Path) -> bool:
+    """Return True if this directory should be excluded from listings/trees."""
+    return path.is_dir() and path.name in SKIP_DIRS
+
+
 # ── Tools ─────────────────────────────────────────────────────────────────────
 
 @tool
 def list_files(subdirectory: str = ".") -> str:
     """
-    List all files and folders inside the sandbox (or a subdirectory of it).
-    Returns relative paths only — the AI never sees absolute paths.
+    List files and folders directly inside the sandbox (or a subdirectory).
+    Only shows immediate children — not recursive.
+    Skips noise directories like .venv, __pycache__, .git, node_modules, etc.
 
     Args:
         subdirectory: Relative path to list. Defaults to "." (the root).
@@ -62,13 +82,14 @@ def list_files(subdirectory: str = ".") -> str:
     if not target.is_dir():
         return f"'{subdirectory}' is a file, not a directory."
 
-    root = get_sandbox_root()
-    entries = sorted(target.rglob("*"))
+    entries = sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name))
     lines = []
     for entry in entries:
-        rel = entry.relative_to(root)
+        if _is_skipped(entry):
+            lines.append(f"📁 {entry.name}/  [skipped]")
+            continue
         prefix = "📁 " if entry.is_dir() else "📄 "
-        lines.append(f"{prefix}{rel}")
+        lines.append(f"{prefix}{entry.name}")
 
     if not lines:
         return "Directory is empty."
@@ -77,33 +98,10 @@ def list_files(subdirectory: str = ".") -> str:
 
 
 @tool
-def read_file(relative_path: str) -> str:
-    """
-    Read and return the text content of a file inside the sandbox.
-
-    Args:
-        relative_path: Path to the file, relative to the sandbox root.
-    """
-    try:
-        path = _safe_path(relative_path)
-    except PermissionError as e:
-        return str(e)
-
-    if not path.exists():
-        return f"File '{relative_path}' does not exist."
-    if not path.is_file():
-        return f"'{relative_path}' is a directory, not a file."
-
-    try:
-        return path.read_text(encoding="utf-8", errors="replace")
-    except Exception as e:
-        return f"Could not read '{relative_path}': {e}"
-
-
-@tool
 def file_tree(subdirectory: str = ".") -> str:
     """
     Show a visual tree of files and folders (like the `tree` command).
+    Skips noise directories like .venv, __pycache__, .git, node_modules, etc.
 
     Args:
         subdirectory: Relative path to start the tree from. Defaults to ".".
@@ -124,6 +122,11 @@ def file_tree(subdirectory: str = ".") -> str:
         for i, child in enumerate(children):
             is_last = i == len(children) - 1
             connector = "└── " if is_last else "├── "
+
+            if _is_skipped(child):
+                lines.append(f"{prefix}{connector}📁 {child.name}/  [skipped]")
+                continue
+
             icon = "📁 " if child.is_dir() else "📄 "
             lines.append(f"{prefix}{connector}{icon}{child.name}")
             if child.is_dir():
@@ -166,4 +169,4 @@ def file_info(relative_path: str) -> str:
 
 
 # ── Exported list of all local tools ─────────────────────────────────────────
-LOCAL_TOOLS = [list_files, read_file, file_tree, file_info]
+LOCAL_TOOLS = [list_files, file_tree, file_info]

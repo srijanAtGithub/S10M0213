@@ -61,3 +61,13 @@ def start():
     import asyncio
     from local_session import run_local_session
     asyncio.run(run_local_session())
+
+
+@main_cli.command()
+def help():
+    """Show help."""
+    click.echo("\nAvailable commands:")
+    click.echo("  init - Initialize the project")
+    click.echo("  run - Run the agent")
+    click.echo("  start - Start a local terminal session")
+    

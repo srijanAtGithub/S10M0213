@@ -64,12 +64,12 @@ def build_local_graph():
             f"\n\n---\n"
             f"# Local File Access\n"
             f"You have access to the user's local directory via sandboxed tools.\n"
-            f"You can list files, read files, show a file tree, and get file info.\n"
-            f"You CANNOT write, delete, or modify any files.\n"
+            f"You can list immediate files/folders, show a full file tree, and get file info.\n"
+            f"You CANNOT read file contents, write, delete, or modify any files.\n"
             f"All paths you pass to tools must be relative paths.\n"
         )
         response = await main_llm.ainvoke([
-            SystemMessage(content="You are a helpful agent" + sandbox_notice),
+            SystemMessage(content=soul + sandbox_notice),
             *state["messages"],
         ])
         return {"messages": [response]}
@@ -114,7 +114,7 @@ async def run_local_session():
 
     print(BANNER)
     print_info(f"Sandbox root: {cwd}")
-    print_info(f"Tools available: list_files, read_file, file_tree, file_info")
+    print_info(f"Tools available: list_files, file_tree, file_info")
     print()
 
     # 2. Build the graph (no persistence needed for local sessions)
