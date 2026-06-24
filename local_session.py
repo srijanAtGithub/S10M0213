@@ -22,6 +22,24 @@ Use from:
   - sicily start
 """
 
+import json
+import os
+from pathlib import Path
+
+def _load_settings():
+    settings_path = Path.home() / ".sicily" / "settings.json"
+    if not settings_path.exists():
+        raise FileNotFoundError(
+            f"No settings.json found at {settings_path}. Run `sicily init` first."
+        )
+    with open(settings_path) as f:
+        settings = json.load(f)
+    for key in ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "TAVILY_API_KEY"]:
+        if settings.get(key):
+            os.environ[key] = settings[key]
+
+_load_settings()
+
 import operator
 import uuid
 from pathlib import Path
@@ -35,6 +53,9 @@ from langgraph.prebuilt import ToolNode
 import sys
 import itertools
 import asyncio
+
+import main as _main_module
+_main_module.init_settings()
 
 import configuration
 from local_tools import LOCAL_TOOLS, set_sandbox_root
@@ -110,15 +131,6 @@ def build_local_graph():
     return graph.compile()
 
 
-# ── Terminal I/O helpers ──────────────────────────────────────────────────────
-def print_ai(text: str):
-    print(f"\nSicily:  {text}\n")
-
-
-def print_info(text: str):
-    print(f"    {text}")
-
-
 # ── Main session loop ─────────────────────────────────────────────────────────
 async def run_local_session():
     """Entry point called by `sicily start` in cli.py."""
@@ -129,7 +141,6 @@ async def run_local_session():
 
     print(BANNER)
     print_info(f"Sandbox root: {cwd}")
-    print_info(f"Tools available: read_text_file, list_directory, file_tree, search_files, get_file_info, list_allowed_directories")
     print()
 
     # 2. Build the graph (no persistence needed for local sessions)
@@ -188,6 +199,14 @@ async def run_local_session():
 
 
 # ── Terminal I/O helpers ──────────────────────────────────────────────────────
+def print_ai(text: str):
+    print(f"\nSicily:  {text}\n")
+
+
+def print_info(text: str):
+    print(f"    {text}")
+
+    
 async def _spinner(message: str = "Thinking"):
     """Displays a spinning cursor in the terminal."""
     spinner_chars = itertools.cycle(['-', '\\', '|', '/'])
