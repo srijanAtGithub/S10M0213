@@ -22,21 +22,12 @@ Use from:
   - sicily start
 """
 
-import json
-import os
 from pathlib import Path
 
 def _load_settings():
-    settings_path = Path.home() / ".sicily" / "settings.json"
-    if not settings_path.exists():
-        raise FileNotFoundError(
-            f"No settings.json found at {settings_path}. Run `sicily init` first."
-        )
-    with open(settings_path) as f:
-        settings = json.load(f)
-    for key in ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "TAVILY_API_KEY"]:
-        if settings.get(key):
-            os.environ[key] = settings[key]
+    """Load configuration for local session."""
+    from configuration import load_config
+    load_config()
 
 _load_settings()
 
@@ -53,9 +44,6 @@ from langgraph.prebuilt import ToolNode
 import sys
 import itertools
 import asyncio
-
-import main as _main_module
-_main_module.init_settings()
 
 import configuration
 from local_tools import LOCAL_TOOLS, set_sandbox_root
