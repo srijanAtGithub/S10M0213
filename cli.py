@@ -3,49 +3,63 @@ from pathlib import Path
 import shutil
 
 main_cli = click.Group(name="sicily", help="Sicily — State-Locked Autonomous Agent")
+SICILY_HOME = Path.home() / ".sicily"
 
 @main_cli.command()
 def init():
     package_dir = Path(__file__).resolve().parent
-    cwd = Path.cwd()
+    home = SICILY_HOME
+    home.mkdir(exist_ok=True)
 
-    # settings.example.json
     src = package_dir / "settings.example.json"
-    dest = cwd / "settings.example.json"
+    dest = home / "settings.json"
     if dest.exists():
-        click.echo("⚠️  settings.example.json already exists, skipping.")
+        click.echo("~/.sicily/settings.json already exists, skipping.")
     else:
         shutil.copy(src, dest)
-        click.echo("✅ Created settings.example.json")
+        click.echo("Created ~/.sicily/settings.json")
 
-    # Souls/
-    if (cwd / "Souls").exists():
-        click.echo("⚠️  Souls/ already exists, skipping.")
-    else:
-        shutil.copytree(package_dir / "Souls", cwd / "Souls")
-        click.echo("✅ Created Souls/")
+    for folder in ["Souls", "Context"]:
+        if (home / folder).exists():
+            click.echo(f"~/.sicily/{folder}/ already exists, skipping.")
+        else:
+            shutil.copytree(package_dir / folder, home / folder)
+            click.echo(f"Created ~/.sicily/{folder}/")
 
-    # Context/
-    if (cwd / "Context").exists():
-        click.echo("⚠️  Context/ already exists, skipping.")
-    else:
-        shutil.copytree(package_dir / "Context", cwd / "Context")
-        click.echo("✅ Created Context/")
-
-    # Recurring_Tasks/recurring_tasks.yaml
-    rt_dir = cwd / "Recurring_Tasks"
+    rt_dir = home / "Recurring_Tasks"
     yaml_dest = rt_dir / "recurring_tasks.yaml"
     if yaml_dest.exists():
-        click.echo("⚠️  Recurring_Tasks/recurring_tasks.yaml already exists, skipping.")
+        click.echo("~/.sicily/Recurring_Tasks/recurring_tasks.yaml already exists, skipping.")
     else:
         rt_dir.mkdir(exist_ok=True)
         shutil.copy(package_dir / "Recurring_Tasks" / "recurring_tasks.yaml", yaml_dest)
-        click.echo("✅ Created Recurring_Tasks/recurring_tasks.yaml")
+        click.echo("Created ~/.sicily/Recurring_Tasks/recurring_tasks.yaml")
 
-    click.echo("\n📝 Next steps:")
-    click.echo("  1. Edit Souls/*.md to define your agent's personality")
-    click.echo("  2. Fill in settings.example.json and rename it to settings.json")
-    click.echo("  3. sicily run")
+    click.echo("\nNext steps:")
+    click.echo("  1. Use `sicily config` to open the config folder")
+    click.echo("  2. Edit Souls/*.md to define your agent's personality")
+    click.echo("  3. Fill settings.json")
+    click.echo("  4. sicily run")
+
+
+@main_cli.command()
+def config():
+    """Open the ~/.sicily/ config folder in your file manager."""
+    import subprocess
+    import sys
+
+    home = SICILY_HOME
+    if not home.exists():
+        click.echo("⚠️  ~/.sicily/ does not exist yet. Run `sicily init` first.")
+        return
+
+    click.echo(f"📂 Opening {home} ...")
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", str(home)])
+    elif sys.platform == "win32":
+        subprocess.Popen(["explorer", str(home)])
+    else:
+        subprocess.Popen(["xdg-open", str(home)])
 
 
 @main_cli.command()
@@ -68,6 +82,7 @@ def help():
     """Show help."""
     click.echo("\nAvailable commands:")
     click.echo("  init - Initialize the project")
+    click.echo("  config - Open the config folder")
     click.echo("  run - Run the agent")
     click.echo("  start - Start a local terminal session")
     
