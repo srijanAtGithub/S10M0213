@@ -45,9 +45,16 @@ import sys
 import itertools
 import asyncio
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.markdown import Markdown
+
 import configuration
+
+# Initialize the rich console for styling
+console = Console()
 from Cowork.local_tools import LOCAL_TOOLS, set_sandbox_root
-from agent import maybe_summarize, summarizer_llm
+from agent import maybe_summarize
 
 log = structlog.get_logger()
 
@@ -61,6 +68,9 @@ BANNER = """
 ║                                           ║                                            ║
 ╚═══════════════════════════════════════════╩════════════════════════════════════════════╝
 """
+LOCAL_TOKEN_THRESHOLD = 5_000
+
+summarizer_llm = configuration.get_summarizer_llm()
 
 # ── Agent state ───────────────────────────────────────────────────────────────
 class LocalState(TypedDict):
@@ -111,7 +121,12 @@ def build_local_graph():
             - If a tool call fails, report the error exactly — do not paper over it.
             """
 
-        trimmed_messages = await maybe_summarize(state["messages"], summarizer_llm)
+        trimmed_messages = await maybe_summarize(
+            state["messages"], 
+            summarizer_llm, 
+            token_threshold=LOCAL_TOKEN_THRESHOLD, 
+            show_log=False
+        )
         response = await main_llm.ainvoke([
             SystemMessage(content=system_message + sandbox_notice),
             *trimmed_messages,
@@ -145,9 +160,9 @@ async def run_local_session():
     cwd = Path.cwd().resolve()
     set_sandbox_root(cwd)
 
-    print(BANNER)
+    console.print(f"[bold cyan]{BANNER}[/bold cyan]")
     print_info(f"Sandbox root: {cwd}")
-    print()
+    console.print()
 
     # 2. Build the graph (no persistence needed for local sessions)
     graph = build_local_graph()
@@ -159,7 +174,7 @@ async def run_local_session():
     # 3. Chat loop
     while True:
         try:
-            user_input = input(">: ").strip()
+            user_input = console.input("[bold green]>>>:[/bold green] ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n\nGoodbye!")
             break
@@ -206,23 +221,32 @@ async def run_local_session():
 
 # ── Terminal I/O helpers ──────────────────────────────────────────────────────
 def print_ai(text: str):
-    print(f"\nSicily:  {text}\n")
-
+    # Renders the text as Markdown inside a styled box
+    md = Markdown(text)
+    panel = Panel(md, title="[bold blue]Sicily[/bold blue]", border_style="blue", padding=(1, 2))
+    console.print()
+    console.print(panel)
+    console.print()
 
 def print_info(text: str):
-    print(f"    {text}")
+    console.print(f"[dim italic]    {text}[/dim italic]")
 
     
 async def _spinner(message: str = "Thinking"):
     """Displays a spinning cursor in the terminal."""
     spinner_chars = itertools.cycle(['-', '\\', '|', '/'])
     # spinner_chars = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
+
+    # ANSI escape codes for grey and reset
+    grey = "\033[90m"
+    reset = "\033[0m"
+
     try:
         while True:
             # \r moves the cursor back to the start of the line
             sys.stdout.write(f"\r{message} {next(spinner_chars)}")
             sys.stdout.flush()
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
     except asyncio.CancelledError:
         # Clear the line cleanly when the task is cancelled
         sys.stdout.write("\r" + " " * (len(message) + 3) + "\r")

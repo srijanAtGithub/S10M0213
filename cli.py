@@ -73,7 +73,7 @@ def run():
 def start():
     """Start a local terminal session with sandboxed file access."""
     import asyncio
-    from local_session import run_local_session
+    from Cowork.local_session import run_local_session
     asyncio.run(run_local_session())
 
 

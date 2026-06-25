@@ -623,13 +623,14 @@ def get_safe_fresh_messages(messages, keep_last=KEEP_LAST_MESSAGES):
     return fresh
 
 
-async def maybe_summarize(messages, summarizer_llm):
+async def maybe_summarize(messages, summarizer_llm, token_threshold: int = TOKEN_THRESHOLD, show_log: bool = True):
 
     token_count = count_tokens(messages)
 
-    log.info("Context token count", token_count=token_count)
+    if show_log:
+        log.info("Context token count", token_count=token_count)
 
-    if token_count < TOKEN_THRESHOLD:
+    if token_count < token_threshold:
         return messages
 
     log.info("Summarizing old conversation history")
