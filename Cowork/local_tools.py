@@ -587,3 +587,27 @@ LOCAL_TOOLS = [
     create_text_file,
     make_directory,
 ]
+
+
+# Mapping tool names to dynamic, user-friendly status messages
+TOOL_STATUS_MAP = {
+    "read_file": lambda args: f"Reading file [yellow]'{args.get('path')}'[/yellow]",
+    "list_directory": lambda args: f"Listing contents of [yellow]'{args.get('path', '.')}'[/yellow]",
+    "file_tree": lambda args: f"Mapping out directory tree from [yellow]'{args.get('subdirectory', '.')}'[/yellow]",
+    "search_files": lambda args: f"Searching for [yellow]'{args.get('pattern')}'[/yellow] inside [yellow]'{args.get('path')}'[/yellow]",
+    "get_file_info": lambda args: f"Inspecting file metadata for [yellow]'{args.get('path')}'[/yellow]",
+    "list_allowed_directories": lambda args: "Checking project boundary restrictions",
+    "create_text_file": lambda args: f"Creating new text file [yellow]'{args.get('path')}'[/yellow]",
+    "make_directory": lambda args: f"Creating directory [yellow]'{args.get('path')}'[/yellow]",
+}
+
+def get_friendly_tool_message(tool_call: dict) -> str:
+    """Extracts the tool name and args to build a readable status update."""
+    name = tool_call.get("name")
+    args = tool_call.get("args", {})
+    
+    if name in TOOL_STATUS_MAP:
+        return TOOL_STATUS_MAP[name](args)
+    
+    # Fallback just in case you add new tools later without mapping them
+    return name
