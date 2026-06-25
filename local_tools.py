@@ -1,13 +1,21 @@
 """
 local_tools.py
 --------------
-Sandboxed read-only filesystem tools for `sicily start`.
+Sandboxed filesystem tools for `sicily start`.
 
-Mirrors the read-only subset of @modelcontextprotocol/server-filesystem,
+Mirrors the @modelcontextprotocol/server-filesystem interface,
 re-implemented in pure Python with zero extra dependencies.
 
 ALL tools are locked to a single root directory (the cwd where
 `sicily start` was invoked). No path can escape that root.
+
+Tool tiers
+----------
+Read-only tools  — safe:     read_text_file, list_directory, file_tree,
+                              search_files, get_file_info,
+                              list_allowed_directories
+Write tools      — safe-ish: create_text_file, make_directory
+                  Guarantee: never overwrite or delete existing content.
 """
 
 import datetime
@@ -15,6 +23,7 @@ import fnmatch
 import stat
 from pathlib import Path
 from typing import Optional
+import importlib
 
 from langchain_core.tools import tool
 
@@ -30,6 +39,34 @@ SKIP_DIRS = {
     ".tox", ".nox",
     ".idea", ".vscode",
 }
+
+
+# ── Allowed extensions for new text-based files ───────────────────────────────
+# Binary formats (.docx, .xlsx, .pdf, …) are intentionally excluded — writing
+# them requires structured serialisation, not raw text I/O.
+ALLOWED_WRITE_EXTENSIONS: frozenset[str] = frozenset({
+    # Documents & notes
+    ".txt", ".md", ".markdown", ".rst", ".org", ".tex",
+    # Config & data interchange
+    ".json", ".jsonl", ".ndjson",
+    ".yaml", ".yml", ".toml",
+    ".ini", ".cfg", ".conf", ".env",
+    # Web & markup
+    ".html", ".htm", ".css", ".scss", ".sass", ".xml", ".svg",
+    # Source code — common languages
+    ".py", ".pyi",
+    ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx",
+    ".sh", ".bash", ".zsh", ".fish",
+    ".rb", ".go", ".rs",
+    ".java", ".kt", ".scala",
+    ".c", ".cpp", ".cc", ".h", ".hpp",
+    ".cs", ".fs",
+    ".php", ".lua", ".r", ".sql",
+    # Data & logs
+    ".csv", ".tsv", ".log",
+    # Misc text
+    ".diff", ".patch", ".gitignore", ".editorconfig",
+})
 
 
 # ── Sandbox root ───────────────────────────────────────────────────────────────
@@ -83,16 +120,27 @@ def _fmt_permissions(mode: int) -> str:
 
 # ── Tools ──────────────────────────────────────────────────────────────────────
 @tool
-def read_text_file(path: str, head: int = 0, tail: int = 0) -> str:
+def read_file(path: str, head: int = 0, tail: int = 0) -> str:
     """
-    Read the complete contents of a file as text (always UTF-8).
-    Optionally return only the first N lines via `head`, or the last N
-    lines via `tail`. Cannot specify both simultaneously.
+    Read the contents of any file and return it as plain text.
+
+    Handles two categories transparently — the caller does not need to
+    know or care which category a file falls into:
+
+    Text-based files (.txt, .md, .py, .json, .csv, .yaml, .html, etc.)
+        Raw UTF-8 content is returned as-is.
+
+    Binary document formats
+        .pdf   — text is extracted page by page, each labelled [Page N]
+        .docx  — all paragraph text is extracted in document order
+        .xlsx / .xls — every sheet is extracted as a tab-separated table,
+                       each labelled [Sheet: name]
 
     Args:
         path: Relative path to the file.
-        head: If > 0, return only the first N lines.
-        tail: If > 0, return only the last N lines.
+        head: If > 0, return only the first N lines of the extracted text.
+        tail: If > 0, return only the last N lines of the extracted text.
+              Cannot be combined with head.
     """
     if head > 0 and tail > 0:
         return "Error: Cannot specify both `head` and `tail` simultaneously."
@@ -107,20 +155,79 @@ def read_text_file(path: str, head: int = 0, tail: int = 0) -> str:
     if not file_path.is_file():
         return f"'{path}' is a directory, not a file."
 
-    try:
-        content = file_path.read_text(encoding="utf-8", errors="replace")
-    except Exception as e:
-        return f"Could not read '{path}': {e}"
+    # ── Binary formats — route to dedicated parser ────────────────────────────
+    if file_path.suffix.lower() in _BINARY_EXTENSIONS:
+        try:
+            content = _read_binary(file_path)
+        except ImportError as e:
+            return f"Cannot read '{path}': missing required package — {e}"
+        except Exception as e:
+            return f"Could not extract text from '{path}': {e}"
+
+    # ── Text files — UTF-8 read ───────────────────────────────────────────────
+    else:
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            return f"Could not read '{path}': {e}"
 
     if head > 0:
-        lines = content.splitlines(keepends=True)
-        return "".join(lines[:head])
-
+        return "".join(content.splitlines(keepends=True)[:head])
     if tail > 0:
-        lines = content.splitlines(keepends=True)
-        return "".join(lines[-tail:])
+        return "".join(content.splitlines(keepends=True)[-tail:])
 
     return content
+
+
+def _read_binary(path: Path) -> str:
+    """
+    Extract human-readable text from binary file formats.
+    Dispatches to the appropriate parser based on file extension.
+    Raises ImportError with an install hint if the required library is missing.
+    Raises ValueError for unsupported binary extensions.
+    """
+    ext = path.suffix.lower()
+
+    if ext == ".pdf":
+        if importlib.util.find_spec("pdfplumber") is None:
+            raise ImportError("pip install pdfplumber")
+        import pdfplumber
+        with pdfplumber.open(path) as pdf:
+            pages = [page.extract_text() or "" for page in pdf.pages]
+        return "\n\n".join(f"[Page {i+1}]\n{text}" for i, text in enumerate(pages) if text.strip())
+
+    if ext in {".xlsx", ".xls"}:
+        if importlib.util.find_spec("openpyxl") is None:
+            raise ImportError("pip install openpyxl")
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        sheets = []
+        for name in wb.sheetnames:
+            ws = wb[name]
+            rows = [
+                "\t".join("" if cell.value is None else str(cell.value) for cell in row)
+                for row in ws.iter_rows()
+            ]
+            sheets.append(f"[Sheet: {name}]\n" + "\n".join(rows))
+        wb.close()
+        return "\n\n".join(sheets)
+
+    if ext in {".docx", ".doc"}:
+        if importlib.util.find_spec("docx") is None:
+            raise ImportError("pip install python-docx")
+        from docx import Document
+        doc = Document(path)
+        return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+
+    raise ValueError(
+        f"No binary reader available for '{ext}'. "
+        "For plain text files this tool reads UTF-8 directly. "
+        "For other binary formats, a dedicated tool may be needed."
+    )
+
+
+# Extensions that require binary parsing rather than UTF-8 text reads
+_BINARY_EXTENSIONS = frozenset({".pdf", ".xlsx", ".xls", ".docx", ".doc"})
 
 
 @tool
@@ -328,12 +435,155 @@ def list_allowed_directories() -> str:
     return f"Allowed directories:\n  {root}"
 
 
+
+# ── Write tools (safe-ish) ─────────────────────────────────────────────────────
+@tool
+def create_text_file(
+    path: str,
+    content: str,
+    create_parents: bool = True,
+) -> str:
+    """
+    Create a NEW text file at the given relative path with the provided content.
+
+    Safety guarantees
+    -----------------
+    - Will NEVER overwrite an existing file or directory.  If the path already
+      exists the operation is aborted immediately and an error is returned.
+    - The resolved path must stay inside the sandbox root; any traversal attempt
+      (e.g. "../../etc/passwd") is blocked before any I/O occurs.
+    - Only recognised text-based extensions are accepted (see list below).
+    - Parent directories are created automatically when `create_parents=True`
+      (the default), as long as they remain inside the sandbox.
+
+    Supported extensions
+    --------------------
+    Documents/notes : .txt .md .markdown .rst .org .tex
+    Config/data     : .json .jsonl .ndjson .yaml .yml .toml .ini .cfg .conf .env
+    Web/markup      : .html .htm .css .scss .sass .xml .svg
+    Source code     : .py .pyi .js .mjs .cjs .ts .tsx .jsx .sh .bash .zsh .fish
+                      .rb .go .rs .java .kt .scala .c .cpp .cc .h .hpp .cs .fs
+                      .php .lua .r .sql
+    Data/logs       : .csv .tsv .log
+    Misc text       : .diff .patch .gitignore .editorconfig
+
+    Args:
+        path:           Relative path for the new file, including its name and
+                        extension (e.g. "notes/meeting.md").
+        content:        UTF-8 text content to write.
+        create_parents: When True (default), any missing parent directories are
+                        created automatically.  Set to False if you want the
+                        operation to fail when a parent does not exist.
+    """
+    # ── 1. Sandbox enforcement ────────────────────────────────────────────────
+    try:
+        target = _safe_path(path)
+    except PermissionError as e:
+        return str(e)
+
+    # ── 2. No-overwrite guard ─────────────────────────────────────────────────
+    if target.exists():
+        kind = "directory" if target.is_dir() else "file"
+        return (
+            f"Refused: '{path}' already exists as a {kind}. "
+            "This tool will not overwrite existing entries."
+        )
+
+    # ── 3. Extension whitelist ────────────────────────────────────────────────
+    ext = target.suffix.lower()
+    if not ext:
+        return (
+            f"Refused: '{path}' has no file extension. "
+            "Please include one (e.g. report.md, config.yaml)."
+        )
+    if ext not in ALLOWED_WRITE_EXTENSIONS:
+        allowed_str = "  " + "\n  ".join(sorted(ALLOWED_WRITE_EXTENSIONS))
+        return (
+            f"Refused: extension '{ext}' is not in the allowed list.\n"
+            f"Supported extensions:\n{allowed_str}"
+        )
+
+    # ── 4. Parent directory handling ──────────────────────────────────────────
+    parent = target.parent
+    if not parent.exists():
+        if not create_parents:
+            rel_parent = parent.relative_to(get_sandbox_root())
+            return (
+                f"Error: parent directory '{rel_parent}' does not exist. "
+                "Pass create_parents=True to create it automatically, "
+                "or use make_directory first."
+            )
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            return f"Could not create parent directories for '{path}': {e}"
+
+    # ── 5. Write ──────────────────────────────────────────────────────────────
+    try:
+        target.write_text(content, encoding="utf-8")
+    except Exception as e:
+        return f"Could not write '{path}': {e}"
+
+    size = target.stat().st_size
+    return (
+        f"Created '{path}'.\n"
+        f"Size: {size:,} bytes | Encoding: utf-8"
+    )
+
+
+@tool
+def make_directory(path: str) -> str:
+    """
+    Create a new directory at the given relative path, including any missing
+    intermediate parents.  Idempotent: succeeds silently if the directory
+    already exists.
+
+    Safety guarantees
+    -----------------
+    - Will NOT fail or overwrite if the directory already exists.
+    - Will NOT touch any existing files or directories inside the path.
+    - The resolved path must stay inside the sandbox root.
+    - Will refuse if the path already exists as a *file*.
+
+    Args:
+        path: Relative path of the directory to create (e.g. "reports/q3").
+    """
+    # ── 1. Sandbox enforcement ────────────────────────────────────────────────
+    try:
+        target = _safe_path(path)
+    except PermissionError as e:
+        return str(e)
+
+    # ── 2. Collision check ────────────────────────────────────────────────────
+    if target.is_file():
+        return (
+            f"Refused: '{path}' already exists as a file. "
+            "Cannot create a directory at that path."
+        )
+
+    if target.is_dir():
+        return f"Directory '{path}' already exists — nothing to do."
+
+    # ── 3. Create ─────────────────────────────────────────────────────────────
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        return f"Could not create directory '{path}': {e}"
+
+    return f"Directory '{path}' created."
+
+
 # ── Exported tool list ─────────────────────────────────────────────────────────
 LOCAL_TOOLS = [
-    read_text_file,
+    # ── Read-only (safe) ──────────────────────────────────────────────────────
+    read_file,
     list_directory,
     file_tree,
     search_files,
     get_file_info,
     list_allowed_directories,
+
+    # ── Write (safe-ish — create only, never overwrite or delete) ─────────────
+    create_text_file,
+    make_directory,
 ]

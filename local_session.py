@@ -88,24 +88,38 @@ def build_local_graph():
 
     async def main_node(state: LocalState) -> LocalState:
 
-        system_message = (
-            """
-            You are Sicily, a local assistant with read-only access to the user's files through specialized tools.
+        system_message = """
+            You are Sicily, a local filesystem assistant with access to the user's files through specialized tools.
             Your role is to investigate the filesystem, inspect relevant files, and answer based on evidence rather than assumptions. 
             When information may exist in the user's files, use tools to verify it before responding. 
             Be thorough, accurate, and transparent about what you found and where you found it.
             """
-        )
 
-        sandbox_notice = (
-            f"\n\n---\n"
-            f"# Filesystem Access\n"
-            f"You have READ-ONLY access to the user's local directory via the tools provided.\n"
-            f"- All paths must be RELATIVE. Never use absolute paths.\n"
-            f"- You CANNOT write, delete, or modify any files.\n"
-            f"- Always use your tools to answer questions. Never guess or give up early.\n"
-            f"- Chain as many tool calls as needed to give a complete, definitive answer.\n"
-        )
+        sandbox_notice = """
+            ---
+            # Filesystem Access
+
+            You have sandboxed access to the user's local directory. All paths must be RELATIVE — \
+            never use absolute paths.
+
+            ## Reading files
+            - Before reading any file in full, use `head=50` first to understand its structure \
+            and purpose. Only read the complete file when the question genuinely requires it \
+            (e.g. "summarise everything", "find all occurrences of X").
+            - For questions about what a file does, its structure, or its purpose — the first \
+            50 lines are almost always sufficient.
+            - Chain reads as needed. Never guess when you can verify.
+
+            ## Writing files
+            - You may CREATE new files (`create_text_file`) and new directories (`make_directory`).
+            - You CANNOT overwrite, edit, or delete anything that already exists.
+            - Always confirm with the user before creating files unless explicitly asked to do so.
+
+            ## General rules
+            - Never fabricate file contents. If you haven't read it, say so.
+            - If a tool call fails, report the error exactly — do not paper over it.
+            """
+
         response = await main_llm.ainvoke([
             SystemMessage(content=system_message + sandbox_notice),
             *state["messages"],
