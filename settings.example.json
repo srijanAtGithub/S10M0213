@@ -1,7 +1,5 @@
 {
     "OPENAI_API_KEY": "",
-    "GEMINI_API_KEY": "",
-    "AI_PROVIDER": "",
     "TELEGRAM_BOT_TOKEN": "",
     "TAVILY_API_KEY": ""
 }

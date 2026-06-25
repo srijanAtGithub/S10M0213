@@ -4,7 +4,6 @@ import time
 import asyncio
 import Auth.swiggy_auth
 
-from dotenv import load_dotenv
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
@@ -13,7 +12,8 @@ from pathlib import Path
 import structlog
 log = structlog.get_logger()
 
-load_dotenv()
+from configuration import load_config
+load_config()
 
 import uvicorn
 from contextlib import asynccontextmanager
@@ -30,7 +30,7 @@ from Recurring_Tasks.recurring_tasks import start_recurring_tasks, set_dispatch
 from session_store import init_db, load_all_sessions, load_session, save_session, delete_session
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID_FILE = Path(".chat_id")
+CHAT_ID_FILE = SICILY_HOME / ".chat_id"
 
 # Telegram globals
 active_chat_id: int | None = None
@@ -596,29 +596,11 @@ def main():
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
+SICILY_HOME = Path.home() / ".sicily"
+
 def init_settings():
-    with open("settings.json") as f:
-        settings = json.load(f)
-
-    # Sync .env
-    ENV_KEYS = ["TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY", "GEMINI_API_KEY", "TAVILY_API_KEY"]
-    
-    env = {}
-    if Path(".env").exists():
-        for line in Path(".env").read_text().splitlines():
-            if line.strip() and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
-
-    for key in ENV_KEYS:
-        if settings.get(key):
-            env[key] = settings[key]
-
-    Path(".env").write_text("\n".join(f'{k}={v}' for k, v in env.items()) + "\n")
-
-    # Sync configuration.py
-    import configuration
-    configuration.PROVIDER = settings.get("AI_PROVIDER")
+    """Deprecated — now handled by configuration.load_config()"""
+    pass
 
 
 if __name__ == "__main__":

@@ -1,6 +1,5 @@
 import operator
 import asyncio
-import traceback
 from datetime import datetime
 from typing import TypedDict, Annotated, Literal
 

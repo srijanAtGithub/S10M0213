@@ -1,19 +1,86 @@
-# configuration.py
-# Change PROVIDER to switch models system-wide.
-# Options: "openai" | "google"
-
-PROVIDER = "openai"
-
 from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
 from openai import AsyncOpenAI
+
+import json
+import os
+from pathlib import Path
+import structlog
+from dotenv import load_dotenv
+
+log = structlog.get_logger()
+
+SICILY_HOME = Path.home() / ".sicily"
+SETTINGS_PATH = SICILY_HOME / "settings.json"
+ENV_PATH = SICILY_HOME / ".env"
+
+REQUIRED_KEYS = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "TAVILY_API_KEY"]
+
+
+def ensure_settings() -> bool:
+    """Create settings.json from example if it doesn't exist."""
+    if SETTINGS_PATH.exists():
+        return False
+
+    package_dir = Path(__file__).resolve().parent
+    src = package_dir / "settings.example.json"
+
+    if not src.exists():
+        log.error("settings.example.json not found in package")
+        return False
+
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    import shutil
+    shutil.copy(src, SETTINGS_PATH)
+    log.info("Created default settings.json", path=str(SETTINGS_PATH))
+    return True
+
+
+def load_settings_to_env() -> None:
+    """Load settings.json into os.environ and sync .env file."""
+    if not SETTINGS_PATH.exists():
+        raise FileNotFoundError(
+            f"settings.json not found at {SETTINGS_PATH}. Run `sicily init` first."
+        )
+
+    with open(SETTINGS_PATH) as f:
+        settings = json.load(f)
+
+    # settings.json takes precedence
+    for key in REQUIRED_KEYS:
+        if val := settings.get(key):
+            os.environ[key] = val
+
+    # Sync .env file
+    existing = {}
+    if ENV_PATH.exists():
+        for line in ENV_PATH.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                existing[k.strip()] = v.strip()
+
+    # Update with values from settings.json
+    for key in REQUIRED_KEYS:
+        if val := settings.get(key):
+            existing[key] = val
+
+    # Write back
+    env_content = "\n".join(f"{k}={v}" for k, v in existing.items())
+    ENV_PATH.write_text(env_content + "\n")
+
+    log.debug("Environment synced from settings.json")
+
+
+def load_config() -> None:
+    """Main configuration loader — call this at the very top of entrypoints."""
+    ensure_settings()
+    load_settings_to_env()
+    load_dotenv(ENV_PATH)
+    log.debug("Full configuration loaded")
 
 
 def get_main_llm(tools=None):
-    if PROVIDER == "openai":
-        llm = ChatOpenAI(model="gpt-5.4-mini")
-    elif PROVIDER == "google":
-        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite")
+    llm = ChatOpenAI(model="gpt-5.4-mini")
 
     if tools:
         return llm.bind_tools(tools, parallel_tool_calls=False)
@@ -21,31 +88,19 @@ def get_main_llm(tools=None):
 
 
 def get_safety_llm(schema):
-    if PROVIDER == "openai":
-        return ChatOpenAI(model="gpt-5.4-nano").with_structured_output(schema, include_raw=False)
-    elif PROVIDER == "google":
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite").with_structured_output(schema, include_raw=False)
+    return ChatOpenAI(model="gpt-5.4-nano").with_structured_output(schema, include_raw=False)
 
 
 def get_intent_llm(schema):
-    if PROVIDER == "openai":
-        return ChatOpenAI(model="gpt-5.4-nano").with_structured_output(schema, include_raw=False)
-    elif PROVIDER == "google":
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite").with_structured_output(schema, include_raw=False)
+    return ChatOpenAI(model="gpt-5.4-nano").with_structured_output(schema, include_raw=False)
 
 
 def get_eval_llm():
-    if PROVIDER == "openai":
-        return ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    elif PROVIDER == "google":
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0)
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 
 def get_summarizer_llm():
-    if PROVIDER == "openai":
-        return ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    elif PROVIDER == "google":
-        return ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0) 
+    return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
 def get_transcriber() -> AsyncOpenAI:
     """Returns an AsyncOpenAI client for voice transcription via gpt-4o-mini-transcribe."""
