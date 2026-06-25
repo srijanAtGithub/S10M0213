@@ -18,7 +18,7 @@ Uses:
 Use from:
   - uv build
   - uv pip install dist/sicily-0.2.3-py3-none-any.whl
-  - .venv\Scripts\activate
+  - .venv\Scripts\activate // source .venv/bin/activate
   - sicily start
 """
 
@@ -46,18 +46,21 @@ import itertools
 import asyncio
 
 import configuration
-from local_tools import LOCAL_TOOLS, set_sandbox_root
+from Cowork.local_tools import LOCAL_TOOLS, set_sandbox_root
+from agent import maybe_summarize, summarizer_llm
 
 log = structlog.get_logger()
 
 BANNER = """
-╔══════════════════════════════════════════╗
-║           Sicily  —  Local Mode          ║
-║  Files are sandboxed to this directory.  ║
-║      Type  exit  or  quit  to leave.     ║
-╚══════════════════════════════════════════╝
+╔══════════Sicily Cowork V1.1.0═════════════╦═══════════════Capabilities═════════════════╗
+║                                           ║                                            ║
+║                                           ║  - Read & Parse Text, PDF, Word, Excel.    ║
+║  Files are sandboxed to this directory.   ║  - Inspect File Trees & Metadata           ║
+║      Type  exit/quit  to leave.           ║  - Create Text Files & Directories         ║
+║                                           ║  - Strictly Safe: No Overwrites            ║
+║                                           ║                                            ║
+╚═══════════════════════════════════════════╩════════════════════════════════════════════╝
 """
-
 
 # ── Agent state ───────────────────────────────────────────────────────────────
 class LocalState(TypedDict):
@@ -108,9 +111,10 @@ def build_local_graph():
             - If a tool call fails, report the error exactly — do not paper over it.
             """
 
+        trimmed_messages = await maybe_summarize(state["messages"], summarizer_llm)
         response = await main_llm.ainvoke([
             SystemMessage(content=system_message + sandbox_notice),
-            *state["messages"],
+            *trimmed_messages,
         ])
         return {"messages": [response]}
 
