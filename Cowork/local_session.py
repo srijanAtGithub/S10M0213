@@ -18,7 +18,7 @@ Uses:
 Use from:
   - uv build
   - uv pip install dist/sicily-0.2.3-py3-none-any.whl
-  - .venv\Scripts\activate
+  - .venv\Scripts\activate // source .venv/bin/activate
   - sicily start
 """
 
@@ -45,19 +45,32 @@ import sys
 import itertools
 import asyncio
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.markdown import Markdown
+
 import configuration
-from local_tools import LOCAL_TOOLS, set_sandbox_root
+
+# Initialize the rich console for styling
+console = Console()
+from Cowork.local_tools import LOCAL_TOOLS, set_sandbox_root
+from agent import maybe_summarize
 
 log = structlog.get_logger()
 
 BANNER = """
-╔══════════════════════════════════════════╗
-║           Sicily  —  Local Mode          ║
-║  Files are sandboxed to this directory.  ║
-║      Type  exit  or  quit  to leave.     ║
-╚══════════════════════════════════════════╝
+╔══════════Sicily Cowork V1.1.0═════════════╦═══════════════Capabilities═════════════════╗
+║                                           ║                                            ║
+║                                           ║  - Read & Parse Text, PDF, Word, Excel.    ║
+║  Files are sandboxed to this directory.   ║  - Inspect File Trees & Metadata           ║
+║      Type  exit/quit  to leave.           ║  - Create Text Files & Directories         ║
+║                                           ║  - Strictly Safe: No Overwrites            ║
+║                                           ║                                            ║
+╚═══════════════════════════════════════════╩════════════════════════════════════════════╝
 """
+LOCAL_TOKEN_THRESHOLD = 5_000
 
+summarizer_llm = configuration.get_summarizer_llm()
 
 # ── Agent state ───────────────────────────────────────────────────────────────
 class LocalState(TypedDict):
@@ -76,27 +89,47 @@ def build_local_graph():
 
     async def main_node(state: LocalState) -> LocalState:
 
-        system_message = (
-            """
-            You are Sicily, a local assistant with read-only access to the user's files through specialized tools.
+        system_message = """
+            You are Sicily, a local filesystem assistant with access to the user's files through specialized tools.
             Your role is to investigate the filesystem, inspect relevant files, and answer based on evidence rather than assumptions. 
             When information may exist in the user's files, use tools to verify it before responding. 
             Be thorough, accurate, and transparent about what you found and where you found it.
             """
-        )
 
-        sandbox_notice = (
-            f"\n\n---\n"
-            f"# Filesystem Access\n"
-            f"You have READ-ONLY access to the user's local directory via the tools provided.\n"
-            f"- All paths must be RELATIVE. Never use absolute paths.\n"
-            f"- You CANNOT write, delete, or modify any files.\n"
-            f"- Always use your tools to answer questions. Never guess or give up early.\n"
-            f"- Chain as many tool calls as needed to give a complete, definitive answer.\n"
+        sandbox_notice = """
+            ---
+            # Filesystem Access
+
+            You have sandboxed access to the user's local directory. All paths must be RELATIVE — \
+            never use absolute paths.
+
+            ## Reading files
+            - Before reading any file in full, use `head=50` first to understand its structure \
+            and purpose. Only read the complete file when the question genuinely requires it \
+            (e.g. "summarise everything", "find all occurrences of X").
+            - For questions about what a file does, its structure, or its purpose — the first \
+            50 lines are almost always sufficient.
+            - Chain reads as needed. Never guess when you can verify.
+
+            ## Writing files
+            - You may CREATE new files (`create_text_file`) and new directories (`make_directory`).
+            - You CANNOT overwrite, edit, or delete anything that already exists.
+            - Always confirm with the user before creating files unless explicitly asked to do so.
+
+            ## General rules
+            - Never fabricate file contents. If you haven't read it, say so.
+            - If a tool call fails, report the error exactly — do not paper over it.
+            """
+
+        trimmed_messages = await maybe_summarize(
+            state["messages"], 
+            summarizer_llm, 
+            token_threshold=LOCAL_TOKEN_THRESHOLD, 
+            show_log=False
         )
         response = await main_llm.ainvoke([
             SystemMessage(content=system_message + sandbox_notice),
-            *state["messages"],
+            *trimmed_messages,
         ])
         return {"messages": [response]}
 
@@ -127,9 +160,9 @@ async def run_local_session():
     cwd = Path.cwd().resolve()
     set_sandbox_root(cwd)
 
-    print(BANNER)
+    console.print(f"[bold cyan]{BANNER}[/bold cyan]")
     print_info(f"Sandbox root: {cwd}")
-    print()
+    console.print()
 
     # 2. Build the graph (no persistence needed for local sessions)
     graph = build_local_graph()
@@ -141,7 +174,7 @@ async def run_local_session():
     # 3. Chat loop
     while True:
         try:
-            user_input = input(">: ").strip()
+            user_input = console.input("[bold green]>>>:[/bold green] ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n\nGoodbye!")
             break
@@ -188,23 +221,32 @@ async def run_local_session():
 
 # ── Terminal I/O helpers ──────────────────────────────────────────────────────
 def print_ai(text: str):
-    print(f"\nSicily:  {text}\n")
-
+    # Renders the text as Markdown inside a styled box
+    md = Markdown(text)
+    panel = Panel(md, title="[bold blue]Sicily[/bold blue]", border_style="blue", padding=(1, 2))
+    console.print()
+    console.print(panel)
+    console.print()
 
 def print_info(text: str):
-    print(f"    {text}")
+    console.print(f"[dim italic]    {text}[/dim italic]")
 
     
 async def _spinner(message: str = "Thinking"):
     """Displays a spinning cursor in the terminal."""
     spinner_chars = itertools.cycle(['-', '\\', '|', '/'])
     # spinner_chars = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
+
+    # ANSI escape codes for grey and reset
+    grey = "\033[90m"
+    reset = "\033[0m"
+
     try:
         while True:
             # \r moves the cursor back to the start of the line
             sys.stdout.write(f"\r{message} {next(spinner_chars)}")
             sys.stdout.flush()
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.1)
     except asyncio.CancelledError:
         # Clear the line cleanly when the task is cancelled
         sys.stdout.write("\r" + " " * (len(message) + 3) + "\r")

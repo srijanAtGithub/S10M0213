@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sicily"
-version = "1.0.1"
+version = "1.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -25,13 +25,17 @@ dependencies = [
     "langsmith>=0.8.3",
     "numpy>=2.4.6",
     "openai>=2.36.0",
+    "openpyxl>=3.1.5",
+    "pdfplumber>=0.11.10",
     "pyjwt>=2.13.0",
     "pytest>=9.0.3",
+    "python-docx>=1.2.0",
     "python-dotenv>=1.2.2",
     "python-multipart>=0.0.30",
     "python-telegram-bot>=22.7",
     "pyyaml>=6.0.3",
     "requests>=2.34.0",
+    "rich>=15.0.0",
     "starlette>=1.1.0",
     "structlog>=26.1.0",
     "tiktoken>=0.13.0",
