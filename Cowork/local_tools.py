@@ -91,7 +91,16 @@ def _safe_path(relative: str) -> Path:
     Raises PermissionError if the resolved path would escape the root.
     """
     root = get_sandbox_root()
-    resolved = (root / relative).resolve()
+    candidate = root / relative
+    try:
+        resolved = candidate.resolve()
+    except OSError:
+        # On Windows, resolve() can raise FileNotFoundError for paths
+        # that don't exist yet. Fall back to normpath-based resolution,
+        # which works for non-existent paths.
+        import os
+        resolved = Path(os.path.normpath(candidate))
+
     if not resolved.is_relative_to(root):
         raise PermissionError(
             f"Access denied: '{relative}' resolves outside the allowed directory."
