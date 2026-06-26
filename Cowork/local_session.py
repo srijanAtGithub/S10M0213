@@ -41,10 +41,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
 
-import sys
-import itertools
-import asyncio
-
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -53,13 +49,13 @@ import configuration
 
 # Initialize the rich console for styling
 console = Console()
-from Cowork.local_tools import LOCAL_TOOLS, set_sandbox_root
+from Cowork.local_tools import LOCAL_TOOLS, set_sandbox_root, get_friendly_tool_message
 from agent import maybe_summarize
 
 log = structlog.get_logger()
 
 BANNER = """
-╔══════════Sicily Cowork V1.1.0═════════════╦═══════════════Capabilities═════════════════╗
+╔══════════Sicily Cowork V1.2.0═════════════╦═══════════════Capabilities═════════════════╗
 ║                                           ║                                            ║
 ║                                           ║  - Read & Parse Text, PDF, Word, Excel.    ║
 ║  Files are sandboxed to this directory.   ║  - Inspect File Trees & Metadata           ║
@@ -189,20 +185,37 @@ async def run_local_session():
         messages.append(HumanMessage(content=user_input))
 
         try:
-            # Start spinner
-            spinner_task = asyncio.create_task(_spinner())
+            # 1. Start the rich status spinner
+            with console.status("[grey50]Thinking...[/grey50]", spinner="line", spinner_style="dim") as status:
+                
+                root_run_id = None
+                
+                # 2. Stream events to catch on_tool_start
+                async for event in graph.astream_events({"messages": messages}, config, version="v2"):
+                    
+                    # Track the root graph run to capture the final output later
+                    if root_run_id is None:
+                        root_run_id = event.get("run_id")
 
-            result = await graph.ainvoke({"messages": messages}, config)
-            messages = result["messages"]
+                    # 3. Intercept tool execution 
+                    if event["event"] == "on_tool_start":
+                        tool_name = event.get("name")
+                        tool_args = event.get("data", {}).get("input", {})
+                        
+                        # Format the payload for your helper function
+                        tool_call = {"name": tool_name, "args": tool_args}
+                        msg = get_friendly_tool_message(tool_call)
+                        
+                        # Update the terminal spinner with the new message
+                        status.update(f"[grey50]{msg}...[/grey50]")
+                    
+                    # 4. Capture the final state when the main graph finishes
+                    elif event["event"] == "on_chain_end" and event.get("run_id") == root_run_id:
+                        output = event.get("data", {}).get("output")
+                        if output and "messages" in output:
+                            messages = output["messages"]
 
-            # Stop spinner
-            spinner_task.cancel()
-            try:
-                await spinner_task
-            except asyncio.CancelledError:
-                pass
-
-            # Find the last AI text response
+            # 5. Find the last AI text response
             reply = None
             for msg in reversed(messages):
                 if isinstance(msg, AIMessage) and msg.content:
@@ -230,25 +243,3 @@ def print_ai(text: str):
 
 def print_info(text: str):
     console.print(f"[dim italic]    {text}[/dim italic]")
-
-    
-async def _spinner(message: str = "Thinking"):
-    """Displays a spinning cursor in the terminal."""
-    spinner_chars = itertools.cycle(['-', '\\', '|', '/'])
-    # spinner_chars = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
-
-    # ANSI escape codes for grey and reset
-    grey = "\033[90m"
-    reset = "\033[0m"
-
-    try:
-        while True:
-            # \r moves the cursor back to the start of the line
-            sys.stdout.write(f"\r{message} {next(spinner_chars)}")
-            sys.stdout.flush()
-            await asyncio.sleep(0.1)
-    except asyncio.CancelledError:
-        # Clear the line cleanly when the task is cancelled
-        sys.stdout.write("\r" + " " * (len(message) + 3) + "\r")
-        sys.stdout.flush()
-        raise
