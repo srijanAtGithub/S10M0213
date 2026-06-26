@@ -55,7 +55,7 @@ from agent import maybe_summarize
 log = structlog.get_logger()
 
 BANNER = """
-╔══════════Sicily Cowork V1.2.2═════════════╦═══════════════Capabilities═════════════════╗
+╔═════════ Sicily Cowork v1.3.2 ════════════╦══════════════ Capabilities ════════════════╗
 ║                                           ║                                            ║
 ║                                           ║  - Read & Parse Text, PDF, Word, Excel.    ║
 ║  Files are sandboxed to this directory.   ║  - Inspect File Trees & Metadata           ║
@@ -135,7 +135,7 @@ def build_local_graph():
             return "tools"
         return END
 
-    tool_node = ToolNode(LOCAL_TOOLS)
+    tool_node = ToolNode(LOCAL_TOOLS, handle_tool_errors=True)
 
     graph = StateGraph(LocalState)
     graph.add_node("main", main_node)
@@ -156,7 +156,7 @@ async def run_local_session():
     cwd = Path.cwd().resolve()
     set_sandbox_root(cwd)
 
-    console.print(f"[bold blue]{BANNER}[/bold blue]")
+    console.print(f"[bold dark_orange]{BANNER}[/bold dark_orange]")
     print_info(f"Sandbox root: {cwd}")
     console.print()
 
@@ -208,6 +208,11 @@ async def run_local_session():
                         
                         # Update the terminal spinner with the new message
                         status.update(f"[grey50]{msg}...[/grey50]")
+
+                    elif event["event"] == "on_tool_error":
+                        tool_name = event.get("name", "tool")
+                        error = event.get("data", {}).get("error", "unknown error")
+                        status.update(f"[yellow]{tool_name} hit an error: {error}[/yellow]")
                     
                     # 4. Capture the final state when the main graph finishes
                     elif event["event"] == "on_chain_end" and event.get("run_id") == root_run_id:
@@ -236,7 +241,7 @@ async def run_local_session():
 def print_ai(text: str):
     # Renders the text as Markdown inside a styled box
     md = Markdown(text)
-    panel = Panel(md, title="[grey]Sicily[/grey]", border_style="blue", padding=(1, 2))
+    panel = Panel(md, title="[grey50]Sicily[/grey50]", border_style="grey50", padding=(1, 2), title_align="left")
     console.print()
     console.print(panel)
     console.print()
