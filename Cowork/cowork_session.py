@@ -55,7 +55,7 @@ from agent import maybe_summarize
 log = structlog.get_logger()
 
 BANNER = """
-╔═════════ Sicily Cowork v1.3.2 ════════════╦══════════════ Capabilities ════════════════╗
+╔═════════ Sicily Cowork v1.3.3 ════════════╦══════════════ Capabilities ════════════════╗
 ║                                           ║                                            ║
 ║                                           ║  - Read & Parse Text, PDF, Word, Excel.    ║
 ║  Files are sandboxed to this directory.   ║  - Inspect File Trees & Metadata           ║
@@ -186,7 +186,7 @@ async def run_local_session():
 
         try:
             # 1. Start the rich status spinner
-            with console.status("[grey50]Thinking...[/grey50]", spinner="line", spinner_style="dim") as status:
+            with console.status("[grey50]Thinking...[/grey50]", spinner="dots", spinner_style="dim") as status:
                 
                 root_run_id = None
                 
