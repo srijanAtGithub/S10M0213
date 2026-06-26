@@ -7,27 +7,25 @@ main_cli = click.Group(name="sicily", help="Sicily — State-Locked Autonomous A
 SICILY_HOME = Path.home() / ".sicily"
 SETTINGS_PATH = SICILY_HOME / "settings.json"
 
-def ensure_initialized():
-    """Validates that init has been run and settings.json is configured."""
-    # 1. Check if the environment directory exists
+def ensure_initialized(required_keys=None):
+    """Validates that init has been run and specified keys are configured."""
     if not SICILY_HOME.exists() or not SETTINGS_PATH.exists():
         click.secho("  Sicily is not initialized yet!", fg="yellow", bold=True)
         click.echo("Please run the initialization command first:")
         click.secho("  sicily init", fg="cyan")
         raise click.Abort()
 
-    # 2. Check if the user has configured actual API keys
+    # Default to all keys if none specified
+    if required_keys is None:
+        required_keys = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "TAVILY_API_KEY"]
+
     try:
         with open(SETTINGS_PATH, "r") as f:
             settings = json.load(f)
         
-        # Pull required keys from configuration definition
-        required_keys = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "TAVILY_API_KEY"]
         missing_or_placeholder = []
-
         for key in required_keys:
             val = settings.get(key, "")
-            # Check if empty or still matching an example/placeholder format
             if not val or "your_" in val.lower() or "YOUR_" in val:
                 missing_or_placeholder.append(key)
 
@@ -42,7 +40,6 @@ def ensure_initialized():
 
     except json.JSONDecodeError:
         click.secho(" Error: `settings.json` is malformed or corrupted.", fg="red", bold=True)
-        click.echo("You may need to re-initialize or fix the JSON syntax manually.")
         raise click.Abort()
 
 
@@ -106,6 +103,7 @@ def config():
 @main_cli.command()
 def run():
     """Start the Sicily agent."""
+    # Requires all keys
     ensure_initialized()
     from main import main
     main()
@@ -114,7 +112,8 @@ def run():
 @main_cli.command()
 def start():
     """Start a local terminal session with sandboxed file access."""
-    ensure_initialized()
+    # Only requires OpenAI key
+    ensure_initialized(required_keys=["OPENAI_API_KEY"])
     import asyncio
     from Cowork.local_session import run_local_session
     asyncio.run(run_local_session())
