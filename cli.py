@@ -1,9 +1,50 @@
 import click
 from pathlib import Path
 import shutil
+import json
 
 main_cli = click.Group(name="sicily", help="Sicily — State-Locked Autonomous Agent")
 SICILY_HOME = Path.home() / ".sicily"
+SETTINGS_PATH = SICILY_HOME / "settings.json"
+
+def ensure_initialized():
+    """Validates that init has been run and settings.json is configured."""
+    # 1. Check if the environment directory exists
+    if not SICILY_HOME.exists() or not SETTINGS_PATH.exists():
+        click.secho("  Sicily is not initialized yet!", fg="yellow", bold=True)
+        click.echo("Please run the initialization command first:")
+        click.secho("  sicily init", fg="cyan")
+        raise click.Abort()
+
+    # 2. Check if the user has configured actual API keys
+    try:
+        with open(SETTINGS_PATH, "r") as f:
+            settings = json.load(f)
+        
+        # Pull required keys from configuration definition
+        required_keys = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "TAVILY_API_KEY"]
+        missing_or_placeholder = []
+
+        for key in required_keys:
+            val = settings.get(key, "")
+            # Check if empty or still matching an example/placeholder format
+            if not val or "your_" in val.lower() or "YOUR_" in val:
+                missing_or_placeholder.append(key)
+
+        if missing_or_placeholder:
+            click.secho("  Configuration incomplete!", fg="yellow", bold=True)
+            click.echo(f"The following keys in `{SETTINGS_PATH}` need to be configured:")
+            for key in missing_or_placeholder:
+                click.secho(f"  - {key}", fg="red")
+            click.echo("\nPlease edit your settings file or run:")
+            click.secho("  sicily config", fg="cyan")
+            raise click.Abort()
+
+    except json.JSONDecodeError:
+        click.secho(" Error: `settings.json` is malformed or corrupted.", fg="red", bold=True)
+        click.echo("You may need to re-initialize or fix the JSON syntax manually.")
+        raise click.Abort()
+
 
 @main_cli.command()
 def init():
@@ -50,10 +91,10 @@ def config():
 
     home = SICILY_HOME
     if not home.exists():
-        click.echo("⚠️  ~/.sicily/ does not exist yet. Run `sicily init` first.")
+        click.echo("  ~/.sicily/ does not exist yet. Run `sicily init` first.")
         return
 
-    click.echo(f"📂 Opening {home} ...")
+    click.echo(f" Opening {home} ...")
     if sys.platform == "darwin":
         subprocess.Popen(["open", str(home)])
     elif sys.platform == "win32":
@@ -65,6 +106,7 @@ def config():
 @main_cli.command()
 def run():
     """Start the Sicily agent."""
+    ensure_initialized()
     from main import main
     main()
 
@@ -72,6 +114,7 @@ def run():
 @main_cli.command()
 def start():
     """Start a local terminal session with sandboxed file access."""
+    ensure_initialized()
     import asyncio
     from Cowork.local_session import run_local_session
     asyncio.run(run_local_session())
@@ -85,4 +128,3 @@ def help():
     click.echo("  config - Open the config folder")
     click.echo("  run - Run the agent")
     click.echo("  start - Start a local terminal session")
-    

@@ -55,7 +55,7 @@ from agent import maybe_summarize
 log = structlog.get_logger()
 
 BANNER = """
-╔══════════Sicily Cowork V1.2.0═════════════╦═══════════════Capabilities═════════════════╗
+╔══════════Sicily Cowork V1.2.1═════════════╦═══════════════Capabilities═════════════════╗
 ║                                           ║                                            ║
 ║                                           ║  - Read & Parse Text, PDF, Word, Excel.    ║
 ║  Files are sandboxed to this directory.   ║  - Inspect File Trees & Metadata           ║
@@ -156,7 +156,7 @@ async def run_local_session():
     cwd = Path.cwd().resolve()
     set_sandbox_root(cwd)
 
-    console.print(f"[bold cyan]{BANNER}[/bold cyan]")
+    console.print(f"[bold blue]{BANNER}[/bold blue]")
     print_info(f"Sandbox root: {cwd}")
     console.print()
 
@@ -170,7 +170,7 @@ async def run_local_session():
     # 3. Chat loop
     while True:
         try:
-            user_input = console.input("[bold green]>>>:[/bold green] ").strip()
+            user_input = console.input("[white]>>>:[/white] ").strip()
         except (EOFError, KeyboardInterrupt):
             print("\n\nGoodbye!")
             break
@@ -236,7 +236,7 @@ async def run_local_session():
 def print_ai(text: str):
     # Renders the text as Markdown inside a styled box
     md = Markdown(text)
-    panel = Panel(md, title="[bold blue]Sicily[/bold blue]", border_style="blue", padding=(1, 2))
+    panel = Panel(md, title="[grey]Sicily[/grey]", border_style="blue", padding=(1, 2))
     console.print()
     console.print(panel)
     console.print()
