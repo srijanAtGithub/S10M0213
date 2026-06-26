@@ -11,7 +11,7 @@ Completely independent of:
 
 Uses:
   - LangGraph (same as the main agent, but a fresh minimal graph)
-  - local_tools.py  (sandboxed file tools)
+  - cowork_tools.py  (sandboxed file tools)
   - configuration.py (reuses your existing LLM setup)
   - memory_and_context.get_system_message  (reuses your Soul files)
 
@@ -49,7 +49,7 @@ import configuration
 
 # Initialize the rich console for styling
 console = Console()
-from Cowork.local_tools import LOCAL_TOOLS, set_sandbox_root, get_friendly_tool_message
+from Cowork.cowork_tools import LOCAL_TOOLS, set_sandbox_root, get_friendly_tool_message
 from agent import maybe_summarize
 
 log = structlog.get_logger()

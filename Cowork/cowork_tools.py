@@ -1,5 +1,5 @@
 """
-local_tools.py
+cowork_tools.py
 --------------
 Sandboxed filesystem tools for `sicily start`.
 
