@@ -115,7 +115,7 @@ def start():
     # Only requires OpenAI key
     ensure_initialized(required_keys=["OPENAI_API_KEY"])
     import asyncio
-    from Cowork.local_session import run_local_session
+    from Cowork.cowork_session import run_local_session
     asyncio.run(run_local_session())
 
 

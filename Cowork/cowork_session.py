@@ -1,5 +1,5 @@
 """
-local_session.py
+cowork_session.py
 ----------------
 A self-contained terminal chat session for `sicily start`.
 
@@ -11,7 +11,7 @@ Completely independent of:
 
 Uses:
   - LangGraph (same as the main agent, but a fresh minimal graph)
-  - local_tools.py  (sandboxed file tools)
+  - cowork_tools.py  (sandboxed file tools)
   - configuration.py (reuses your existing LLM setup)
   - memory_and_context.get_system_message  (reuses your Soul files)
 
@@ -31,6 +31,7 @@ def _load_settings():
 
 _load_settings()
 
+import asyncio
 import operator
 import uuid
 from pathlib import Path
@@ -49,13 +50,13 @@ import configuration
 
 # Initialize the rich console for styling
 console = Console()
-from Cowork.local_tools import LOCAL_TOOLS, set_sandbox_root, get_friendly_tool_message
+from Cowork.cowork_tools import LOCAL_TOOLS, set_sandbox_root, get_friendly_tool_message
 from agent import maybe_summarize
 
 log = structlog.get_logger()
 
 BANNER = """
-╔═════════ Sicily Cowork v1.3.2 ════════════╦══════════════ Capabilities ════════════════╗
+╔═════════ Sicily Cowork v2.3.3 ════════════╦══════════════ Capabilities ════════════════╗
 ║                                           ║                                            ║
 ║                                           ║  - Read & Parse Text, PDF, Word, Excel.    ║
 ║  Files are sandboxed to this directory.   ║  - Inspect File Trees & Metadata           ║
@@ -148,7 +149,7 @@ def build_local_graph():
     return graph.compile()
 
 
-# ── Main session loop ─────────────────────────────────────────────────────────
+# Main session loop
 async def run_local_session():
     """Entry point called by `sicily start` in cli.py."""
 
@@ -159,6 +160,25 @@ async def run_local_session():
     console.print(f"[bold dark_orange]{BANNER}[/bold dark_orange]")
     print_info(f"Sandbox root: {cwd}")
     console.print()
+
+    # initialise RAG index
+    from Cowork.cowork_rag import SicilyRAG, set_rag
+
+    rag = SicilyRAG(cwd)
+    with console.status("[grey50]Indexing files...[/grey50]", spinner="dots", spinner_style="dim"):
+        loop    = asyncio.get_event_loop()
+        summary = await loop.run_in_executor(None, rag.index_session)
+    set_rag(rag)
+
+    print_info(
+        f"Index ready — "
+        f"{summary['indexed']} file(s) indexed, "
+        f"{summary['skipped']} unchanged, "
+        f"{summary['deleted']} removed, "
+        f"{summary['failed']} failed"
+    )
+    console.print()
+    # end RAG init
 
     # 2. Build the graph (no persistence needed for local sessions)
     graph = build_local_graph()
@@ -186,7 +206,7 @@ async def run_local_session():
 
         try:
             # 1. Start the rich status spinner
-            with console.status("[grey50]Thinking...[/grey50]", spinner="line", spinner_style="dim") as status:
+            with console.status("[grey50]Thinking...[/grey50]", spinner="dots", spinner_style="dim") as status:
                 
                 root_run_id = None
                 

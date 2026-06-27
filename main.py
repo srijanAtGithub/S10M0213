@@ -29,6 +29,8 @@ from memory_and_context import run_evaluator
 from Recurring_Tasks.recurring_tasks import start_recurring_tasks, set_dispatch
 from session_store import init_db, load_all_sessions, load_session, save_session, delete_session
 
+SICILY_HOME = Path.home() / ".sicily"
+
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID_FILE = SICILY_HOME / ".chat_id"
 
@@ -455,6 +457,15 @@ async def lifespan(app: FastAPI):
 
     log.info("Telegram bot is running...")
 
+    if active_chat_id is not None:
+        try:
+            await telegram_app.bot.send_message(
+                chat_id=active_chat_id,
+                text="Sicily is awake and ready!"
+            )
+        except Exception:
+            log.exception("Failed to send startup notification")
+
     set_dispatch(dispatch_recurring_task)
 
     # Do NOT await this here, or startup deadlocks.
@@ -595,8 +606,6 @@ def main():
     log.info("Sicily started successfully.")
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
-
-SICILY_HOME = Path.home() / ".sicily"
 
 def init_settings():
     """Deprecated — now handled by configuration.load_config()"""

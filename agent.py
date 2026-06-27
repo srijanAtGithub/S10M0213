@@ -633,7 +633,8 @@ async def maybe_summarize(messages, summarizer_llm, token_threshold: int = TOKEN
     if token_count < token_threshold:
         return messages
 
-    log.info("Summarizing old conversation history")
+    if show_log:
+        log.info("Summarizing old conversation history")
 
     # ---------------------------------------------------------
     # Preserve a structurally-safe recent window.
