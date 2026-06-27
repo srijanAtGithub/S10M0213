@@ -1,5 +1,5 @@
 """
-local_session.py
+cowork_session.py
 ----------------
 A self-contained terminal chat session for `sicily start`.
 
@@ -31,6 +31,7 @@ def _load_settings():
 
 _load_settings()
 
+import asyncio
 import operator
 import uuid
 from pathlib import Path
@@ -148,7 +149,7 @@ def build_local_graph():
     return graph.compile()
 
 
-# ── Main session loop ─────────────────────────────────────────────────────────
+# Main session loop
 async def run_local_session():
     """Entry point called by `sicily start` in cli.py."""
 
@@ -159,6 +160,25 @@ async def run_local_session():
     console.print(f"[bold dark_orange]{BANNER}[/bold dark_orange]")
     print_info(f"Sandbox root: {cwd}")
     console.print()
+
+    # initialise RAG index
+    from Cowork.cowork_rag import SicilyRAG, set_rag
+
+    rag = SicilyRAG(cwd)
+    with console.status("[grey50]Indexing files...[/grey50]", spinner="dots", spinner_style="dim"):
+        loop    = asyncio.get_event_loop()
+        summary = await loop.run_in_executor(None, rag.index_session)
+    set_rag(rag)
+
+    print_info(
+        f"Index ready — "
+        f"{summary['indexed']} file(s) indexed, "
+        f"{summary['skipped']} unchanged, "
+        f"{summary['deleted']} removed, "
+        f"{summary['failed']} failed"
+    )
+    console.print()
+    # end RAG init
 
     # 2. Build the graph (no persistence needed for local sessions)
     graph = build_local_graph()
