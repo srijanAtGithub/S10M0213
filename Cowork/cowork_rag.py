@@ -17,19 +17,25 @@ Hybrid search architecture
       Merges both ranked lists into a single, de-duplicated ranking.
       Neither layer alone wins — both inform the final order.
 
-Storage layout (one directory per sandbox session)
+Storage layout (global, shared across all sessions)
 --------------------------------------------------
-  ~/.sicily/<encoded-sandbox-path>/rag-details/
-      chroma/           ChromaDB persistent collection
+  ~/.sicily/file-index/
+      chroma/           ChromaDB persistent collection (all sessions share this)
       tfidf.pkl         Fitted TfidfVectorizer + sparse matrix + ID list
-      registry.json     { "relative/path.pdf": "2024-01-15T10:30:00" }
+      registry.json     { "/abs/path/to/file.pdf": "2024-01-15T10:30:00" }
+                          ↑ keyed by absolute path, not relative
 
 Incremental updates
 -------------------
-  On every session start, Sicily walks the sandbox and compares each
-  file's last-modified timestamp against the registry. Only new or
-  changed files are re-indexed. Deleted files are removed from the store.
-  Unchanged files are skipped entirely — startup is fast after the first run.
+  On every session start, Sicily:
+    1. Runs a global cleanup — removes registry entries for files that no
+       longer exist on disk, regardless of which session indexed them.
+    2. Removes entries for files that were under the current sandbox but
+       have since been moved or deleted.
+    3. Walks the current sandbox and re-indexes only new or changed files.
+  Files indexed by other sessions are never touched unless they are deleted
+  from disk. Starting from a parent or child of a previously indexed
+  directory reuses existing chunks — nothing is re-indexed unnecessarily.
 """
 
 import hashlib
@@ -108,23 +114,13 @@ def get_rag() -> Optional["SicilyRAG"]:
 
 
 # Path helpers
-def _encode_sandbox_path(sandbox: Path) -> str:
+def _global_rag_dir() -> Path:
     """
-    Convert an absolute sandbox path to a safe, human-readable directory name.
-    e.g.  /home/alice/projects/myapp  →  home-alice-projects-myapp
-
-    Capped at 180 chars so the full ~/.sicily/<encoded>/rag-details path
-    stays well within filesystem limits on every OS.
+    Return (and create) the single global RAG storage directory.
+    All sessions share this — the index is keyed by absolute file path,
+    so starting from any directory reuses previously indexed files.
     """
-    parts = [p for p in sandbox.parts if p not in ("", "/", "\\")]
-    encoded = "-".join(parts).replace(" ", "_")
-    return encoded[:180]
-
-
-def _rag_dir(sandbox: Path) -> Path:
-    """Return (and create) the RAG storage directory for this sandbox session."""
-    encoded = _encode_sandbox_path(sandbox)
-    path = Path.home() / ".sicily" / encoded / "rag-details"
+    path = Path.home() / ".sicily" / "file-index"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -195,7 +191,7 @@ class SicilyRAG:
 
     def __init__(self, sandbox_root: Path) -> None:
         self.sandbox_root = sandbox_root.resolve()
-        self.rag_dir      = _rag_dir(self.sandbox_root)
+        self.rag_dir      = _global_rag_dir()
 
         # Paths
         self._chroma_dir    = self.rag_dir / "chroma"
@@ -208,6 +204,7 @@ class SicilyRAG:
             collection_name="sicily_rag",
             embedding_function=self._embeddings,
             persist_directory=str(self._chroma_dir),
+            collection_metadata={"hnsw:space": "cosine"},
         )
         self._splitter = RecursiveCharacterTextSplitter(
             chunk_size=CHUNK_SIZE,
@@ -219,10 +216,11 @@ class SicilyRAG:
         # TF-IDF state
         self._tfidf_vectorizer: Optional[TfidfVectorizer] = None
         self._tfidf_matrix   = None
-        self._tfidf_ids: list[str] = []  # row i  →  ChromaDB chunk id
+        self._tfidf_ids: list[str] = []          # row i  →  ChromaDB chunk id
+        self._tfidf_id_to_abspath: dict[str, str] = {}  # chunk id → abs file path
 
         # File registry
-        # { "relative/path/to/file.pdf": "2024-01-15T10:30:00" }
+        # { "/absolute/path/to/file.pdf": "2024-01-15T10:30:00" }
         self._registry: dict[str, str] = self._load_registry()
 
 
@@ -248,9 +246,10 @@ class SicilyRAG:
         with open(self._tfidf_path, "wb") as fh:
             pickle.dump(
                 {
-                    "vectorizer": self._tfidf_vectorizer,
-                    "matrix":     self._tfidf_matrix,
-                    "ids":        self._tfidf_ids,
+                    "vectorizer":      self._tfidf_vectorizer,
+                    "matrix":          self._tfidf_matrix,
+                    "ids":             self._tfidf_ids,
+                    "id_to_abspath":   self._tfidf_id_to_abspath,
                 },
                 fh,
             )
@@ -262,9 +261,10 @@ class SicilyRAG:
         try:
             with open(self._tfidf_path, "rb") as fh:
                 data = pickle.load(fh)
-            self._tfidf_vectorizer = data["vectorizer"]
-            self._tfidf_matrix     = data["matrix"]
-            self._tfidf_ids        = data["ids"]
+            self._tfidf_vectorizer     = data["vectorizer"]
+            self._tfidf_matrix         = data["matrix"]
+            self._tfidf_ids            = data["ids"]
+            self._tfidf_id_to_abspath  = data.get("id_to_abspath", {})
             return True
         except Exception:
             return False
@@ -274,17 +274,26 @@ class SicilyRAG:
         """
         Rebuild the TF-IDF index from scratch using whatever is
         currently stored in ChromaDB.  Called after any indexing change.
+        Fitted on the global corpus (all sessions) for better calibration.
         """
-        result = self._vectorstore.get(include=["documents"])
-        docs = result.get("documents") or []
-        ids  = result.get("ids") or []
+        result = self._vectorstore.get(include=["documents", "metadatas"])
+        docs      = result.get("documents") or []
+        ids       = result.get("ids") or []
+        metadatas = result.get("metadatas") or []
 
         if not docs:
             # Nothing indexed yet — clear TF-IDF state
-            self._tfidf_vectorizer = None
-            self._tfidf_matrix     = None
-            self._tfidf_ids        = []
+            self._tfidf_vectorizer    = None
+            self._tfidf_matrix        = None
+            self._tfidf_ids           = []
+            self._tfidf_id_to_abspath = {}
             return
+
+        # Build ID → abs_path mapping so _tfidf_search can filter by sandbox
+        id_to_abspath = {
+            cid: m.get("abs_path", "")
+            for cid, m in zip(ids, metadatas)
+        }
 
         vectorizer = TfidfVectorizer(
             strip_accents="unicode",
@@ -295,19 +304,22 @@ class SicilyRAG:
         )
         matrix = vectorizer.fit_transform(docs)
 
-        self._tfidf_vectorizer = vectorizer
-        self._tfidf_matrix     = matrix
-        self._tfidf_ids        = list(ids)
+        self._tfidf_vectorizer    = vectorizer
+        self._tfidf_matrix        = matrix
+        self._tfidf_ids           = list(ids)
+        self._tfidf_id_to_abspath = id_to_abspath
         self._save_tfidf()
 
     # Chunk ID
     @staticmethod
-    def _chunk_id(rel_path: str, chunk_index: int) -> str:
+    def _chunk_id(abs_path: str, chunk_index: int) -> str:
         """
         Stable, deterministic ID for a chunk.
         Used as the ChromaDB document ID so re-indexing is idempotent.
+        Keyed by absolute path so the same file is never indexed twice
+        regardless of which sandbox session discovered it.
         """
-        raw = f"{rel_path}::{chunk_index}"
+        raw = f"{abs_path}::{chunk_index}"
         return hashlib.md5(raw.encode()).hexdigest()
 
 
@@ -318,23 +330,23 @@ class SicilyRAG:
 
 
     def _should_reindex(self, file_path: Path) -> bool:
-        rel = str(file_path.relative_to(self.sandbox_root))
-        if rel not in self._registry:
-            return True
-        return self._mtime_iso(file_path) != self._registry[rel]
+        abs_path = str(file_path)
+        if abs_path not in self._registry:
+            return True                                           # new file
+        return self._mtime_iso(file_path) != self._registry[abs_path]  # modified
 
 
-    def _delete_file_chunks(self, rel_path: str) -> None:
+    def _delete_file_chunks(self, abs_path: str) -> None:
         """Remove all ChromaDB documents that belong to one file."""
         try:
             existing = self._vectorstore.get(
-                where={"file_path": rel_path},
+                where={"abs_path": abs_path},
                 include=[],
             )
             if existing["ids"]:
                 self._vectorstore.delete(ids=existing["ids"])
         except Exception as exc:
-            log.warning("rag.delete_chunks_failed", path=rel_path, error=str(exc))
+            log.warning("rag.delete_chunks_failed", path=abs_path, error=str(exc))
 
 
     def _index_file(self, file_path: Path) -> int:
@@ -344,19 +356,19 @@ class SicilyRAG:
           2. Delete any previously indexed chunks for this file.
           3. Split into chunks with character offsets.
           4. Convert character offsets → line numbers (1-based).
-          5. Store in ChromaDB with full metadata.
+          5. Store in ChromaDB with full metadata (keyed by abs_path).
           6. Update registry.
 
         Returns number of chunks stored (0 if skipped).
         """
-        rel_path = str(file_path.relative_to(self.sandbox_root))
+        abs_path = str(file_path)
 
         text = _extract_text(file_path)
         if not text or not text.strip():
             return 0
 
         # Remove stale chunks
-        self._delete_file_chunks(rel_path)
+        self._delete_file_chunks(abs_path)
 
         # Use create_documents to get metadata with start_index
         raw_docs = self._splitter.create_documents([text])
@@ -399,9 +411,9 @@ class SicilyRAG:
             end_line = char_to_line(end_char)
 
             texts.append(doc.page_content)
-            ids.append(self._chunk_id(rel_path, i))
+            ids.append(self._chunk_id(abs_path, i))
             metadatas.append({
-                "file_path":    rel_path,
+                "abs_path":     abs_path,           # for filtering / deletion
                 "file_name":    file_path.name,
                 "extension":    file_path.suffix.lower(),
                 "chunk_index":  i,
@@ -418,7 +430,7 @@ class SicilyRAG:
             ids=ids,
         )
 
-        self._registry[rel_path] = mtime_iso
+        self._registry[abs_path] = mtime_iso
         return n
 
 
@@ -434,6 +446,22 @@ class SicilyRAG:
                     files.append(fp)
         return files
 
+
+    def _clean_stale_entries(self) -> int:
+        """
+        Global cleanup: remove registry entries for files that no longer
+        exist on disk, regardless of which session originally indexed them.
+        Run once at startup before any other indexing logic.
+        """
+        stale = [p for p in list(self._registry) if not Path(p).exists()]
+        for abs_path in stale:
+            self._delete_file_chunks(abs_path)
+            del self._registry[abs_path]
+        if stale:
+            log.info("rag.stale_cleaned", count=len(stale))
+        return len(stale)
+
+
     def index_session(self) -> dict:
         """
         Run at Sicily startup.  Walks the sandbox and brings the index
@@ -443,18 +471,24 @@ class SicilyRAG:
         -------
         dict with keys: total_files, indexed, skipped, deleted, failed
         """
-        all_files = self._walk_sandbox()
-        current_rel = {
-            str(f.relative_to(self.sandbox_root)) for f in all_files
-        }
+        all_files   = self._walk_sandbox()
+        current_abs = {str(f) for f in all_files}
+        sandbox_str = str(self.sandbox_root)
 
-        # Remove deleted files
-        deleted_paths = [p for p in list(self._registry) if p not in current_rel]
-        for rel_path in deleted_paths:
-            self._delete_file_chunks(rel_path)
-            del self._registry[rel_path]
+        # Step 1 — global cleanup: files deleted from disk anywhere
+        self._clean_stale_entries()
 
-        # Index new / modified files
+        # Step 2 — sandbox cleanup: files that were under this sandbox
+        # but have since been moved or removed (still exist on disk elsewhere)
+        deleted_paths = [
+            p for p in list(self._registry)
+            if p.startswith(sandbox_str) and p not in current_abs
+        ]
+        for abs_path in deleted_paths:
+            self._delete_file_chunks(abs_path)
+            del self._registry[abs_path]
+
+        # Step 3 — index new / modified files
         indexed = skipped = failed = 0
 
         for fp in all_files:
@@ -467,7 +501,7 @@ class SicilyRAG:
                     indexed += 1
                     log.info(
                         "rag.indexed",
-                        path=str(fp.relative_to(self.sandbox_root)),
+                        path=str(fp),
                         chunks=n,
                     )
             except Exception as exc:
@@ -495,18 +529,28 @@ class SicilyRAG:
 
     # Search
     def _tfidf_search(self, query: str, k: int) -> list[tuple[str, float]]:
-        """Keyword search. Returns [(chunk_id, score), ...]."""
+        """
+        Keyword search. Pre-filters to chunks under the current sandbox
+        using the id → abs_path mapping built at TF-IDF rebuild time.
+        Returns [(chunk_id, score), ...].
+        """
         if self._tfidf_vectorizer is None or self._tfidf_matrix is None:
             return []
         try:
+            sandbox_str = str(self.sandbox_root)
             q_vec  = self._tfidf_vectorizer.transform([query])
             scores = cosine_similarity(q_vec, self._tfidf_matrix).flatten()
-            top_i  = scores.argsort()[::-1][:k]
-            return [
+
+            # Score all chunks, then filter to current sandbox only
+            results = [
                 (self._tfidf_ids[i], float(scores[i]))
-                for i in top_i
+                for i in range(len(self._tfidf_ids))
                 if scores[i] > 0.0
+                and self._tfidf_id_to_abspath.get(self._tfidf_ids[i], "").startswith(sandbox_str)
             ]
+            results.sort(key=lambda x: x[1], reverse=True)
+            return results[:k]
+
         except Exception as exc:
             log.warning("rag.tfidf_search_failed", error=str(exc))
             return []
@@ -514,19 +558,28 @@ class SicilyRAG:
 
     def _semantic_search(self, query: str, k: int) -> list[tuple[str, float]]:
         """
-        Semantic search via ChromaDB.
+        Semantic search via ChromaDB, filtered to the current sandbox.
+        Fetches extra candidates (4x) to compensate for cross-sandbox
+        filtering, since ChromaDB doesn't support path-prefix filtering natively.
         Returns [(chunk_id, relevance_score), ...].
         Relevance score is normalised to [0, 1] by LangChain.
         """
         try:
+            sandbox_str = str(self.sandbox_root)
+            # Fetch extra to account for filtering out other-session chunks
             hits = self._vectorstore.similarity_search_with_relevance_scores(
-                query, k=k
+                query, k=k * 4
             )
             results = []
             for doc, score in hits:
                 meta     = doc.metadata
-                chunk_id = self._chunk_id(meta["file_path"], meta["chunk_index"])
+                abs_path = meta.get("abs_path", "")
+                if not abs_path.startswith(sandbox_str):
+                    continue  # skip files from other sandbox sessions
+                chunk_id = self._chunk_id(abs_path, meta["chunk_index"])
                 results.append((chunk_id, float(score)))
+                if len(results) >= k:
+                    break
             return results
         except Exception as exc:
             log.warning("rag.semantic_search_failed", error=str(exc))
@@ -560,6 +613,8 @@ class SicilyRAG:
     def search(self, query: str, top_k: int = TOP_K) -> list[dict]:
         """
         Hybrid search: TF-IDF keyword pass  +  semantic pass  →  RRF merge.
+        Both passes are pre-filtered to the current sandbox, so results
+        are always scoped to the active session directory.
 
         Parameters
         ----------
@@ -570,15 +625,18 @@ class SicilyRAG:
         -------
         List of result dicts, best match first:
         {
-            "file_path":    "reports/Q3.pdf",
+            "file_path":    "reports/Q3.pdf",   ← relative to current sandbox
+            "abs_path":     "/home/.../Q3.pdf", ← absolute, for tool calls
             "file_name":    "Q3.pdf",
             "chunk_index":  3,
             "total_chunks": 12,
             "last_modified":"2024-01-15T10:30:00",
+            "start_line":   84,
+            "end_line":     99,
             "text":         "...the actual chunk content...",
         }
         """
-        # Stage 1 — run both searches
+        # Stage 1 — run both searches (both already sandbox-filtered)
         tfidf_hits    = self._tfidf_search(query,    k=TFIDF_CANDIDATES)
         semantic_hits = self._semantic_search(query, k=SEMANTIC_CANDIDATES)
 
@@ -602,16 +660,25 @@ class SicilyRAG:
             )
         }
 
-        # Preserve RRF order
+        # Preserve RRF order; compute relative path at query time
         results = []
         for cid in top_ids:
             if cid not in id_to_data:
                 continue
-            entry = id_to_data[cid]
-            m = entry["meta"]
+            entry    = id_to_data[cid]
+            m        = entry["meta"]
+            abs_path = m["abs_path"]
+
+            # Derive display path relative to current sandbox
+            try:
+                rel_path = str(Path(abs_path).relative_to(self.sandbox_root))
+            except ValueError:
+                rel_path = abs_path  # fallback: shouldn't happen after sandbox filter
+
             results.append(
                 {
-                    "file_path":    m["file_path"],
+                    "file_path":    rel_path,
+                    "abs_path":     abs_path,
                     "file_name":    m["file_name"],
                     "chunk_index":  m["chunk_index"],
                     "total_chunks": m["total_chunks"],
