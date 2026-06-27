@@ -51,8 +51,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 log = structlog.get_logger()
 
 
-# ── Constants ─────────────────────────────────────────────────────────────────
-
+# Constants
 CHUNK_SIZE        = 500   # characters per chunk
 CHUNK_OVERLAP     = 50    # overlap between adjacent chunks
 TOP_K             = 5     # final results returned to the LLM
@@ -94,9 +93,8 @@ SKIP_DIRS: set[str] = {
 }
 
 
-# ── Module-level singleton ────────────────────────────────────────────────────
+# Module-level singleton
 # Set once in cowork_session.py, read by the search_index tool in cowork_tools.py
-
 _RAG_INSTANCE: Optional["SicilyRAG"] = None
 
 
@@ -109,8 +107,7 @@ def get_rag() -> Optional["SicilyRAG"]:
     return _RAG_INSTANCE
 
 
-# ── Path helpers ──────────────────────────────────────────────────────────────
-
+# Path helpers
 def _encode_sandbox_path(sandbox: Path) -> str:
     """
     Convert an absolute sandbox path to a safe, human-readable directory name.
@@ -132,8 +129,7 @@ def _rag_dir(sandbox: Path) -> Path:
     return path
 
 
-# ── Text extraction ───────────────────────────────────────────────────────────
-
+# Text extraction
 def _extract_text(file_path: Path) -> Optional[str]:
     """
     Extract plain text from any supported file type.
@@ -146,7 +142,7 @@ def _extract_text(file_path: Path) -> Optional[str]:
         return None
 
     try:
-        # ── Binary formats ──────────────────────────────────────────────────
+        # Binary formats
         if ext == ".pdf":
             import pdfplumber
             with pdfplumber.open(file_path) as pdf:
@@ -177,7 +173,7 @@ def _extract_text(file_path: Path) -> Optional[str]:
             doc = Document(file_path)
             return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
-        # ── Plain text (all remaining supported extensions) ─────────────────
+        # Plain text (all remaining supported extensions)
         return file_path.read_text(encoding="utf-8", errors="replace")
 
     except Exception as exc:
@@ -185,8 +181,7 @@ def _extract_text(file_path: Path) -> Optional[str]:
         return None
 
 
-# ── Core RAG class ────────────────────────────────────────────────────────────
-
+# Core RAG class
 class SicilyRAG:
     """
     Local hybrid RAG engine for a single Sicily session.
@@ -202,12 +197,12 @@ class SicilyRAG:
         self.sandbox_root = sandbox_root.resolve()
         self.rag_dir      = _rag_dir(self.sandbox_root)
 
-        # ── Paths ────────────────────────────────────────────────────────────
+        # Paths
         self._chroma_dir    = self.rag_dir / "chroma"
         self._tfidf_path    = self.rag_dir / "tfidf.pkl"
         self._registry_path = self.rag_dir / "registry.json"
 
-        # ── LangChain / ChromaDB ─────────────────────────────────────────────
+        # LangChain / ChromaDB
         self._embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
         self._vectorstore = Chroma(
             collection_name="sicily_rag",
@@ -221,17 +216,17 @@ class SicilyRAG:
             add_start_index=True,   # stored in metadata as "start_index"
         )
 
-        # ── TF-IDF state ─────────────────────────────────────────────────────
+        # TF-IDF state
         self._tfidf_vectorizer: Optional[TfidfVectorizer] = None
         self._tfidf_matrix   = None
         self._tfidf_ids: list[str] = []  # row i  →  ChromaDB chunk id
 
-        # ── File registry ─────────────────────────────────────────────────────
+        # File registry
         # { "relative/path/to/file.pdf": "2024-01-15T10:30:00" }
         self._registry: dict[str, str] = self._load_registry()
 
-    # ── Registry ──────────────────────────────────────────────────────────────
 
+    # Registry
     def _load_registry(self) -> dict[str, str]:
         if self._registry_path.exists():
             try:
@@ -240,14 +235,15 @@ class SicilyRAG:
                 return {}
         return {}
 
+
     def _save_registry(self) -> None:
         self._registry_path.write_text(
             json.dumps(self._registry, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
 
-    # ── TF-IDF persistence ────────────────────────────────────────────────────
 
+    # TF-IDF persistence
     def _save_tfidf(self) -> None:
         with open(self._tfidf_path, "wb") as fh:
             pickle.dump(
@@ -258,6 +254,7 @@ class SicilyRAG:
                 },
                 fh,
             )
+
 
     def _load_tfidf(self) -> bool:
         if not self._tfidf_path.exists():
@@ -271,6 +268,7 @@ class SicilyRAG:
             return True
         except Exception:
             return False
+
 
     def _rebuild_tfidf(self) -> None:
         """
@@ -302,8 +300,7 @@ class SicilyRAG:
         self._tfidf_ids        = list(ids)
         self._save_tfidf()
 
-    # ── Chunk ID ──────────────────────────────────────────────────────────────
-
+    # Chunk ID
     @staticmethod
     def _chunk_id(rel_path: str, chunk_index: int) -> str:
         """
@@ -313,17 +310,19 @@ class SicilyRAG:
         raw = f"{rel_path}::{chunk_index}"
         return hashlib.md5(raw.encode()).hexdigest()
 
-    # ── File-level indexing ───────────────────────────────────────────────────
 
+    # File-level indexing
     def _mtime_iso(self, file_path: Path) -> str:
         ts = file_path.stat().st_mtime
         return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts))
 
+
     def _should_reindex(self, file_path: Path) -> bool:
         rel = str(file_path.relative_to(self.sandbox_root))
         if rel not in self._registry:
-            return True                                   # new file
-        return self._mtime_iso(file_path) != self._registry[rel]  # modified
+            return True
+        return self._mtime_iso(file_path) != self._registry[rel]
+
 
     def _delete_file_chunks(self, rel_path: str) -> None:
         """Remove all ChromaDB documents that belong to one file."""
@@ -336,6 +335,7 @@ class SicilyRAG:
                 self._vectorstore.delete(ids=existing["ids"])
         except Exception as exc:
             log.warning("rag.delete_chunks_failed", path=rel_path, error=str(exc))
+
 
     def _index_file(self, file_path: Path) -> int:
         """
@@ -421,8 +421,8 @@ class SicilyRAG:
         self._registry[rel_path] = mtime_iso
         return n
 
-    # ── Session-level indexing ────────────────────────────────────────────────
 
+    # Session-level indexing
     def _walk_sandbox(self) -> list[Path]:
         """Return every indexable file inside the sandbox, skipping noise dirs."""
         files: list[Path] = []
@@ -448,13 +448,13 @@ class SicilyRAG:
             str(f.relative_to(self.sandbox_root)) for f in all_files
         }
 
-        # ── Remove deleted files ──────────────────────────────────────────────
+        # Remove deleted files
         deleted_paths = [p for p in list(self._registry) if p not in current_rel]
         for rel_path in deleted_paths:
             self._delete_file_chunks(rel_path)
             del self._registry[rel_path]
 
-        # ── Index new / modified files ────────────────────────────────────────
+        # Index new / modified files
         indexed = skipped = failed = 0
 
         for fp in all_files:
@@ -476,7 +476,7 @@ class SicilyRAG:
 
         self._save_registry()
 
-        # ── Sync TF-IDF ───────────────────────────────────────────────────────
+        # Sync TF-IDF
         if indexed > 0 or deleted_paths:
             # Something changed — rebuild from scratch for consistency
             self._rebuild_tfidf()
@@ -492,8 +492,8 @@ class SicilyRAG:
             "failed":      failed,
         }
 
-    # ── Search ────────────────────────────────────────────────────────────────
 
+    # Search
     def _tfidf_search(self, query: str, k: int) -> list[tuple[str, float]]:
         """Keyword search. Returns [(chunk_id, score), ...]."""
         if self._tfidf_vectorizer is None or self._tfidf_matrix is None:
@@ -510,6 +510,7 @@ class SicilyRAG:
         except Exception as exc:
             log.warning("rag.tfidf_search_failed", error=str(exc))
             return []
+
 
     def _semantic_search(self, query: str, k: int) -> list[tuple[str, float]]:
         """
@@ -530,6 +531,7 @@ class SicilyRAG:
         except Exception as exc:
             log.warning("rag.semantic_search_failed", error=str(exc))
             return []
+
 
     @staticmethod
     def _rrf_merge(
@@ -553,6 +555,7 @@ class SicilyRAG:
             rrf_scores[chunk_id] = rrf_scores.get(chunk_id, 0.0) + 1.0 / (k + rank + 1)
 
         return sorted(rrf_scores, key=lambda cid: rrf_scores[cid], reverse=True)
+
 
     def search(self, query: str, top_k: int = TOP_K) -> list[dict]:
         """
@@ -620,6 +623,7 @@ class SicilyRAG:
             )
 
         return results
+
 
     def format_results(self, results: list[dict]) -> str:
         """
