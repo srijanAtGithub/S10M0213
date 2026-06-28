@@ -56,7 +56,7 @@ from agent import maybe_summarize
 log = structlog.get_logger()
 
 BANNER = """
-╔═════════ Sicily Cowork v2.4.4 ════════════╦══════════════ Capabilities ════════════════╗
+╔═════════ Sicily Cowork v2.4.5 ════════════╦══════════════ Capabilities ════════════════╗
 ║                                           ║                                            ║
 ║                                           ║  - Read & Parse Text, PDF, Word, Excel.    ║
 ║  Files are sandboxed to this directory.   ║  - Inspect File Trees & Metadata           ║
