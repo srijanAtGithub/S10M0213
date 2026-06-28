@@ -10,7 +10,7 @@ _oauth_code_future = None
 
 _cache = {"token": None, "expires_at": 0}
 
-async def get_valid_token() -> str:
+async def get_swiggy_token() -> str:
     """Returns a cached token, or re-runs OAuth if expired."""
     if _cache["token"] and time.time() < _cache["expires_at"] - 60:
         return _cache["token"]

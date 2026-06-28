@@ -13,7 +13,7 @@ SICILY_HOME = Path.home() / ".sicily"
 SETTINGS_PATH = SICILY_HOME / "settings.json"
 ENV_PATH = SICILY_HOME / ".env"
 
-REQUIRED_KEYS = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "TAVILY_API_KEY"]
+REQUIRED_KEYS = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "TAVILY_API_KEY", "GITHUB_TOKEN"]
 
 
 def ensure_settings() -> bool:

@@ -5,10 +5,8 @@ from telegram.ext import CommandHandler, ContextTypes
 from agent import tool_manager
 from connectors import CONNECTORS
 
-# ──────────────────────────────────────────────────────────────────────────────
-# TELEGRAM COMMANDS EXECUTORS
-# ──────────────────────────────────────────────────────────────────────────────
 
+# TELEGRAM COMMANDS EXECUTORS
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import main
 
@@ -161,9 +159,26 @@ async def disconnect_tavily_command(update: Update, context: ContextTypes.DEFAUL
     await update.message.reply_text("🗑️ Tavily disconnected.")
 
 
-# ──────────────────────────────────────────────────────────────────────────────
+async def connect_github_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loaded = tool_manager.loaded_servers
+    if "github" in loaded:
+        await update.message.reply_text("⚠️ GitHub is already connected.")
+        return
+    
+    await update.message.reply_text("⏳ Connecting GitHub MCP...")
+    try:
+        await CONNECTORS["github"](tool_manager)
+        await update.message.reply_text("✅ GitHub connected successfully!\nYou can now search repos, read files, and manage issues.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed to connect GitHub:\n{str(e)}")
+
+
+async def disconnect_github_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tool_manager.unregister("github")
+    await update.message.reply_text("🗑️ GitHub disconnected.")
+
+
 # REGISTRATION HELPERS
-# ──────────────────────────────────────────────────────────────────────────────
 def setup_command_handlers(telegram_app):
     """Attaches all command handlers to the application."""
     telegram_app.add_handler(CommandHandler("start", start_command))
@@ -179,6 +194,8 @@ def setup_command_handlers(telegram_app):
     telegram_app.add_handler(CommandHandler("disconnect_telegram", disconnect_telegram_command))
     telegram_app.add_handler(CommandHandler("connect_tavily", connect_tavily_command))
     telegram_app.add_handler(CommandHandler("disconnect_tavily", disconnect_tavily_command))
+    telegram_app.add_handler(CommandHandler("connect_github", connect_github_command))
+    telegram_app.add_handler(CommandHandler("disconnect_github", disconnect_github_command))
 
 
 async def setup_bot_commands(telegram_app):
@@ -197,4 +214,6 @@ async def setup_bot_commands(telegram_app):
         BotCommand("disconnect_telegram", "Disconnect Telegram"),
         BotCommand("connect_tavily",    "Connect Tavily search"),
         BotCommand("disconnect_tavily", "Disconnect Tavily"),
+        BotCommand("connect_github",    "Connect GitHub"),
+        BotCommand("disconnect_github", "Disconnect GitHub"),
     ])
