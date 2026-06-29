@@ -2,7 +2,7 @@
 
 A production-grade, cost-efficient, and crash-resilient AI runtime powered by **LangGraph** and **Multi-Transport MCP**. Sicily runs in two modes: as a persistent personal agent operating through an asynchronous **Telegram** interface, and as a **local terminal assistant** with sandboxed access to your files. Both modes can coordinate external tools, maintain long-term memory, and handle complex multi-step tasks.
 
-> **[→ Jump to How to Use](#how-to-use)**
+> **[→ JUMP TO 'HOW TO USE'](#how-to-use)**
 
 The system is built around six core principles:
 
@@ -29,11 +29,11 @@ Sicily also runs entirely locally via `sicily start` — no Telegram, no server,
 
 ### Handles Unlimited Tools Without Losing Focus
 
-Most agents fall apart as you add more tools — the context window fills up, costs spike, and the model starts hallucinating wrong tool calls. This system solves that with a **two-stage retrieval pipeline** that filters tools *before* they ever reach the main LLM.
+Most agents fall apart as you add more tools — the context window fills up, costs spike, and the model starts hallucinating wrong tool calls. This system solves that with a **two-stage retrieval pipeline** that filters tools _before_ they ever reach the main LLM.
 
 <img src="Images/two_stage_tool_retrieval.svg" alt="Two-Stage Tool Retrieval" width="75%">
 
-**Stage 1 — Intent routing:** A cheap nano model reads the last few messages and decides which *services* are relevant right now (e.g. only Swiggy, not Gmail). Everything else is ignored entirely.
+**Stage 1 — Intent routing:** A cheap nano model reads the last few messages and decides which _services_ are relevant right now (e.g. only Swiggy, not Gmail). Everything else is ignored entirely.
 
 **Stage 2 — Semantic filtering:** Within each selected service, tool descriptions are compared to the query using cosine similarity. Only the most relevant tools per service are passed forward.
 
@@ -49,7 +49,7 @@ The agent builds a personal profile of you automatically. Every session, after y
 
 These are stored as a clean flat list in `preferences.md`. When preferences contradict each other (you said you prefer concise responses last month but now you clearly want detail), the merge step resolves the conflict and keeps only the newer version.
 
-On every new session, only the preferences *relevant to your current request* are retrieved via semantic search and woven into the system prompt. You're not stuffing the context with everything — just what matters right now.
+On every new session, only the preferences _relevant to your current request_ are retrieved via semantic search and woven into the system prompt. You're not stuffing the context with everything — just what matters right now.
 
 The agent's core personality and tone live separately in `Souls/{name}.md`, which can be swapped out entirely without touching any application logic.
 
@@ -67,7 +67,7 @@ Every tool call goes through a three-gate safety pipeline before execution.
 
 **Gate 3 — LLM safety net:** Anything ambiguous gets evaluated by a dedicated safety LLM that reads the tool description and the arguments being passed.
 
-If a tool is flagged unsafe, the LangGraph graph *pauses* and asks you: approve, abort, or edit the arguments. Nothing happens until you decide. If a tool hallucinated by the model doesn't exist, the executor catches it cleanly and returns a `ToolMessage` saying "Tool not found" — no graph crashes, no cascading errors.
+If a tool is flagged unsafe, the LangGraph graph _pauses_ and asks you: approve, abort, or edit the arguments. Nothing happens until you decide. If a tool hallucinated by the model doesn't exist, the executor catches it cleanly and returns a `ToolMessage` saying "Tool not found" — no graph crashes, no cascading errors.
 
 ---
 
@@ -125,8 +125,8 @@ It walks backward through the message history to find a safe cut point — speci
 
 `sicily start` launches Sicily as a local terminal assistant, sandboxed to whichever directory you run it from. No Telegram, no server, no scheduled tasks — just you and your files.
 
-<img src="Images/cowork_terminal_1.png" alt="Sicily Cowork Terminal" width="85%">
-<img src="Images/cowork_terminal_2.png" alt="Sicily Cowork Terminal" width="85%">
+<img src="Images/cowork_terminal_1.png" alt="Sicily Cowork Terminal" width="100%">
+<img src="Images/cowork_terminal_2.png" alt="Sicily Cowork Terminal" width="100%">
 
 Sicily indexes your files at startup using a **hybrid RAG pipeline** (TF-IDF keyword search + ChromaDB semantic search, merged via Reciprocal Rank Fusion) and uses that index as the first step before reading anything directly. The index is incremental and global — files already indexed from a previous session are reused, not re-embedded.
 
@@ -187,11 +187,12 @@ Opens `~/.sicily/` in your file manager. Fill in `settings.json` with your API k
 {
   "OPENAI_API_KEY": "sk-...",
   "TELEGRAM_BOT_TOKEN": "...",
-  "TAVILY_API_KEY": "..."
+  "TAVILY_API_KEY": "...",
+  "GITHUB_TOKEN": "..."
 }
 ```
 
-`TELEGRAM_BOT_TOKEN` and `TAVILY_API_KEY` are only required for `sicily run`. For local file sessions (`sicily start`), only `OPENAI_API_KEY` is needed.
+`TELEGRAM_BOT_TOKEN`, `TAVILY_API_KEY` and `GITHUB_TOKEN` are only required for `sicily run`. For local file sessions (`sicily start`), only `OPENAI_API_KEY` is needed.
 
 ---
 
@@ -217,8 +218,9 @@ sicily start
 Locks the sandbox to your current directory, indexes all files, and drops you into an interactive terminal session. Ask anything about your files — Sicily will search the index first, then read only what it needs.
 
 ```
->>>: What were the key decisions in last week's meeting notes?
->>>: Find all TODO comments in the codebase
+>>>: What were the key decisions in meeting notes?
+>>>: What is the flight route for my Japan trip?
+>>>: Find the document containing my Aadhar and PAN card
 >>>: Summarise the Q3 report and compare it to Q2
 >>>: Create a new file called summary.md with the main findings
 ```
@@ -229,13 +231,17 @@ Type `exit` or `quit` to end the session.
 
 ### CLI Reference
 
-| Command | Description |
-|---|---|
-| `sicily init` | First-time setup — creates `~/.sicily/` with config templates |
-| `sicily config` | Opens the config folder in your file manager |
-| `sicily run` | Starts the full Telegram agent (requires all API keys) |
-| `sicily start` | Starts a local terminal session sandboxed to the current directory (requires only OpenAI key) |
-| `sicily help` | Lists available commands |
+| Command            | Description                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------------- |
+| `sicily --version` | Shows the installed version                                                                   |
+| `sicily init`      | First-time setup — creates `~/.sicily/` with config templates                                 |
+| `sicily config`    | Opens the config folder in your file manager                                                  |
+| `sicily run`       | Starts the full Telegram agent (requires all API keys)                                        |
+| `sicily start`     | Starts a local terminal session sandboxed to the current directory (requires only OpenAI key) |
+| `sicily update`    | Updates Sicily to the latest published version                                                |
+| `sicily reset`     | Resets all config, Souls, Context, and file index back to defaults                            |
+| `sicily uninstall` | Deletes `~/.sicily/` and uninstalls the package                                               |
+| `sicily help`      | Lists available commands                                                                      |
 
 ---
 
