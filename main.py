@@ -213,7 +213,7 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user      = update.effective_user
     user_id   = str(user.id)
     user_name = user.first_name
-    text      = update.message.text or ""
+    text = update.message.text or context.user_data.pop("voice_text", "") or ""
 
     # ── Session: get or create ────────────────────────────────────────────────
     session_id, is_new_session = await get_or_create_session(user_id, user_name)
@@ -552,7 +552,7 @@ async def on_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     log.info("Voice note transcribed", text=text)
 
-    update.message.text = text
+    context.user_data["voice_text"] = text
     await on_telegram_message(update, context)
 
 

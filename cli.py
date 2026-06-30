@@ -1,11 +1,22 @@
 import click
-from pathlib import Path
 import shutil
 import json
+import subprocess
+from pathlib import Path
+
+try:
+    from importlib.metadata import version as pkg_version
+    __version__ = pkg_version("sicily")
+except Exception:
+    __version__ = "unknown"
+
+# Folders managed by Sicily (reset and uninstall both use this list)
+MANAGED_FOLDERS = ["Souls", "Context", "Recurring_Tasks", "file-index"]
 
 main_cli = click.Group(name="sicily", help="Sicily — State-Locked Autonomous Agent")
 SICILY_HOME = Path.home() / ".sicily"
 SETTINGS_PATH = SICILY_HOME / "settings.json"
+
 
 def ensure_initialized(required_keys=None):
     """Validates that init has been run and specified keys are configured."""
@@ -22,7 +33,7 @@ def ensure_initialized(required_keys=None):
     try:
         with open(SETTINGS_PATH, "r") as f:
             settings = json.load(f)
-        
+
         missing_or_placeholder = []
         for key in required_keys:
             val = settings.get(key, "")
@@ -44,7 +55,34 @@ def ensure_initialized(required_keys=None):
 
 
 @main_cli.command()
+@click.version_option(version=__version__, prog_name="sicily")
+def version():
+    """Show the installed Sicily version."""
+    pass  # --version flag is handled by @click.version_option
+
+
+# Attach --version directly to the group so `sicily --version` works too
+main_cli = click.Group(
+    name="sicily",
+    help="Sicily — State-Locked Autonomous Agent",
+    params=[
+        click.Option(
+            ["--version"],
+            is_flag=True,
+            is_eager=True,
+            expose_value=False,
+            callback=lambda ctx, param, value: (
+                click.echo(f"sicily {__version__}") or ctx.exit()
+            ) if value else None,
+            help="Show the version and exit.",
+        )
+    ],
+)
+
+
+@main_cli.command()
 def init():
+    """Initialize Sicily config, Souls, Context, and task files."""
     package_dir = Path(__file__).resolve().parent
     home = SICILY_HOME
     home.mkdir(exist_ok=True)
@@ -103,7 +141,6 @@ def config():
 @main_cli.command()
 def run():
     """Start the Sicily agent."""
-    # Requires all keys
     ensure_initialized()
     from main import main
     main()
@@ -112,18 +149,188 @@ def run():
 @main_cli.command()
 def start():
     """Start a local terminal session with sandboxed file access."""
-    # Only requires OpenAI key
     ensure_initialized(required_keys=["OPENAI_API_KEY"])
     import asyncio
     from Cowork.cowork_session import run_local_session
     asyncio.run(run_local_session())
 
 
+@main_cli.command(name="reset")
+def reset():
+    """Reset all config, personalization, and indexed files back to default."""
+    if not SICILY_HOME.exists():
+        click.secho("  Nothing to reset — ~/.sicily/ does not exist.", fg="yellow")
+        return
+
+    click.secho("\n  This will permanently reset:", fg="yellow", bold=True)
+    click.echo("  • settings.json          (wiped and restored from template)")
+    click.echo("  • Souls/                 (all personality files reset)")
+    click.echo("  • Context/               (all context files reset)")
+    click.echo("  • Recurring_Tasks/       (task schedule reset)")
+    click.echo("  • file-index/            (ChromaDB, TF-IDF index, registry — deleted)")
+    click.echo()
+
+    if not click.confirm("  Are you sure you want to reset everything?", default=False):
+        click.echo("Aborted.")
+        return
+
+    package_dir = Path(__file__).resolve().parent
+    home = SICILY_HOME
+    errors = []
+
+    # Reset settings.json
+    src = package_dir / "settings.example.json"
+    dest = home / "settings.json"
+    try:
+        if src.exists():
+            shutil.copy(src, dest)
+            click.echo("  ✓ Reset settings.json")
+        else:
+            click.secho("  ✗ settings.example.json not found in package — skipping.", fg="yellow")
+    except Exception as e:
+        errors.append(f"settings.json: {e}")
+
+    # Reset Souls/ and Context/
+    for folder in ["Souls", "Context"]:
+        target = home / folder
+        src_folder = package_dir / folder
+        try:
+            if target.exists():
+                shutil.rmtree(target)
+            if src_folder.exists():
+                shutil.copytree(src_folder, target)
+                click.echo(f"  ✓ Reset {folder}/")
+            else:
+                click.secho(f"  ✗ {folder}/ not found in package — skipping.", fg="yellow")
+        except Exception as e:
+            errors.append(f"{folder}/: {e}")
+
+    # Reset Recurring_Tasks/
+    rt_dir = home / "Recurring_Tasks"
+    yaml_src = package_dir / "Recurring_Tasks" / "recurring_tasks.yaml"
+    yaml_dest = rt_dir / "recurring_tasks.yaml"
+    try:
+        rt_dir.mkdir(exist_ok=True)
+        if yaml_src.exists():
+            shutil.copy(yaml_src, yaml_dest)
+            click.echo("  ✓ Reset Recurring_Tasks/recurring_tasks.yaml")
+        else:
+            click.secho("  ✗ recurring_tasks.yaml not found in package — skipping.", fg="yellow")
+    except Exception as e:
+        errors.append(f"Recurring_Tasks/: {e}")
+
+    # Delete file-index/ entirely
+    file_index = home / "file-index"
+    try:
+        if file_index.exists():
+            shutil.rmtree(file_index)
+            click.echo("  ✓ Deleted file-index/ (ChromaDB, TF-IDF, registry)")
+        else:
+            click.echo("  ✓ file-index/ did not exist — nothing to remove")
+    except Exception as e:
+        errors.append(f"file-index/: {e}")
+
+    if errors:
+        click.secho("\n  Some items could not be reset:", fg="red", bold=True)
+        for err in errors:
+            click.secho(f"  ✗ {err}", fg="red")
+    else:
+        click.secho("\n  Reset complete.", fg="green", bold=True)
+        click.echo("Run `sicily init` to re-initialize, then fill in your settings.")
+
+
+@main_cli.command()
+def update():
+    """Update Sicily to the latest published version."""
+    uv_path = shutil.which("uv")
+    if not uv_path:
+        click.secho("  uv not found.", fg="red", bold=True)
+        click.echo("Sicily is managed via uv. Install it from https://docs.astral.sh/uv/")
+        click.secho("  Then run:  uv tool install --reinstall sicily", fg="cyan")
+        return
+
+    click.echo("  Checking for updates...")
+    result = subprocess.run(
+        [uv_path, "tool", "install", "--reinstall", "sicily"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        click.secho("  ✓ Sicily updated successfully.", fg="green")
+    else:
+        click.secho("  ✗ Update failed. Try running manually:", fg="red")
+        click.secho("      uv tool install --reinstall sicily", fg="cyan")
+        if result.stderr:
+            click.echo(f"  uv error: {result.stderr.strip()}")
+
+
+@main_cli.command()
+def uninstall():
+    """Remove all local Sicily files and uninstall the package."""
+    click.secho("\n  This will permanently:", fg="yellow", bold=True)
+    click.echo("  • Delete ~/.sicily/  (all config, Souls, Context, indexes — everything)")
+    click.echo("  • Run:  pip uninstall sicily -y")
+    click.echo()
+
+    if not click.confirm("  Are you sure you want to uninstall Sicily?", default=False):
+        click.echo("Aborted.")
+        return
+
+    # Remove ~/.sicily/
+    if SICILY_HOME.exists():
+        try:
+            shutil.rmtree(SICILY_HOME)
+            click.secho("  ✓ Deleted ~/.sicily/", fg="green")
+        except Exception as e:
+            click.secho(f"  ✗ Could not delete ~/.sicily/: {e}", fg="red")
+    else:
+        click.echo("  ✓ ~/.sicily/ did not exist — nothing to remove")
+
+    # Uninstall the package — prefer uv (the recommended install method),
+    # fall back to pip for anyone who installed via pip directly.
+    import subprocess
+    import sys
+
+    uv_path = shutil.which("uv")
+    if uv_path:
+        click.echo("  Uninstalling sicily via uv...")
+        result = subprocess.run(
+            [uv_path, "tool", "uninstall", "sicily"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            click.secho("  ✓ sicily uninstalled successfully.", fg="green")
+        else:
+            click.secho("  ✗ uv tool uninstall failed. Try running manually:", fg="red")
+            click.secho("      uv tool uninstall sicily", fg="cyan")
+            if result.stderr:
+                click.echo(f"  uv error: {result.stderr.strip()}")
+    else:
+        click.echo("  uv not found — falling back to pip...")
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "uninstall", "sicily", "-y"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            click.secho("  ✓ sicily uninstalled successfully.", fg="green")
+        else:
+            click.secho("  ✗ pip uninstall failed. Try running manually:", fg="red")
+            click.secho("      pip uninstall sicily -y", fg="cyan")
+            if result.stderr:
+                click.echo(f"  pip error: {result.stderr.strip()}")
+
+
 @main_cli.command()
 def help():
     """Show help."""
     click.echo("\nAvailable commands:")
-    click.echo("  init - Initialize the project")
-    click.echo("  config - Open the config folder")
-    click.echo("  run - Run the agent")
-    click.echo("  start - Start a local terminal session")
+    click.echo("  --version     - Show the installed version")
+    click.echo("  init          - Initialize the project")
+    click.echo("  config        - Open the config folder")
+    click.echo("  run           - Run the agent")
+    click.echo("  start         - Start a local terminal session")
+    click.echo("  update        - Update Sicily to the latest version")
+    click.echo("  reset         - Reset all config and indexes back to default")
+    click.echo("  uninstall     - Remove all local files and uninstall sicily")

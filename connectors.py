@@ -1,13 +1,14 @@
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from Auth.swiggy_auth import get_valid_token
+from Auth.swiggy_auth import get_swiggy_token
 from Auth.gmail_auth import get_gmail_token
 from Auth.telegram_auth import get_telegram_config
 from Auth.tavily_auth import get_tavily_config
+from Auth.github_auth import get_github_config
 
 from configuration import TELEGRAM_BLACKLIST
 
 async def load_swiggy_tools(tool_manager):
-    token = await get_valid_token()
+    token = await get_swiggy_token()
 
     # return await client.get_tools()
     food_client = MultiServerMCPClient({
@@ -71,17 +72,31 @@ async def load_telegram_tools(tool_manager):
 
 async def load_tavily_tools(tool_manager):
     env = await get_tavily_config()
-    
+    api_key = env["TAVILY_API_KEY"]
+
     tavily_client = MultiServerMCPClient({
         "tavily": {
-            "transport": "stdio",
-            "command": "npx",
-            "args": ["-y", "tavily-mcp@0.1.4"],
-            "env": env,
+            "transport": "streamable_http",
+            "url": f"https://mcp.tavily.com/mcp/?tavilyApiKey={api_key}",
         }
     })
     tools = await tavily_client.get_tools()
     await tool_manager.register(tools, "tavily")
+
+
+async def load_github_tools(tool_manager):
+    env = await get_github_config()
+    token = env["GITHUB_TOKEN"]
+
+    github_client = MultiServerMCPClient({
+        "github": {
+            "transport": "streamable_http",
+            "url": "https://api.githubcopilot.com/mcp/",
+            "headers": {"Authorization": f"Bearer {token}"},
+        }
+    })
+    tools = await github_client.get_tools()
+    await tool_manager.register(tools, "github")
 
 
 # Registry of all available connectors — add new ones here
@@ -90,4 +105,5 @@ CONNECTORS = {
     "gmail":       load_gmail_tools,
     "telegram":    load_telegram_tools,
     "tavily":      load_tavily_tools,
+    "github":      load_github_tools,
 }
