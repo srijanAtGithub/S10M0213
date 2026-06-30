@@ -109,6 +109,7 @@ SKIP_DIRS: set[str] = {
     ".mypy_cache", ".pytest_cache", ".ruff_cache",
     "dist", "build", ".eggs",
     ".tox", ".nox", ".idea", ".vscode",
+    ".sicily-trash",
 }
 
 

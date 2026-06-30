@@ -11,10 +11,8 @@ ALL tools are locked to a single root directory (the cwd where
 
 Tool tiers
 ----------
-Read-only tools  — safe:     read_file, list_directory, file_tree_shallow,
-                              search_files, get_file_info,
-                              list_allowed_directories,
-                              read_file_lines
+Read-only tools  — safe:      read_file, list_directory, file_tree_shallow,
+                              get_file_info, list_allowed_directories, read_file_lines
 Write tools      — safe-ish: create_text_file, make_directory, edit_file_lines
                   Guarantee: never delete existing content.
                   edit_file_lines requires dry_run=False to apply changes.
@@ -24,13 +22,14 @@ Path pins        — memory:   pin_path, recall_path, recall_all_pins
 """
 
 import datetime
-import fnmatch
 import stat
 from pathlib import Path
 from typing import Optional
 import importlib
 
 from langchain_core.tools import tool
+
+import Cowork.cowork_tool_fileops as fileops
 
 
 # Noise directories — skipped in trees and searches
@@ -43,6 +42,7 @@ SKIP_DIRS = {
     "dist", "build", ".eggs",
     ".tox", ".nox",
     ".idea", ".vscode",
+    ".sicily-trash",
 }
 
 
@@ -471,75 +471,6 @@ def file_tree_shallow(subdirectory: str = ".", max_depth: int = 2, max_entries: 
 
 
 @tool
-def search_files(path: str, pattern: str, exclude_patterns: list[str] = []) -> str:
-    """
-    Recursively search for files and directories whose name matches a
-    glob-style pattern (e.g. "*.py", "config.*", "test_*").
-    Returns relative paths to all matches.
-
-    Noise directories (.venv, node_modules, __pycache__, etc.) are
-    automatically excluded. Additional paths can be excluded via
-    `exclude_patterns`.
-
-    This is the cheapest way to locate a specific file when you know its
-    name or a glob — token cost is proportional only to the number of
-    matches, not the tree size.
-
-    Args:
-        path:             Starting directory (relative path).
-        pattern:          Glob pattern matched against each entry's name.
-        exclude_patterns: Optional list of glob patterns to exclude from results,
-                          matched against both the entry name and its relative path.
-    """
-    try:
-        start = _safe_path(path)
-    except PermissionError as e:
-        return str(e)
-
-    if not start.exists():
-        return f"Directory '{path}' does not exist."
-    if not start.is_dir():
-        return f"'{path}' is not a directory."
-
-    root = get_sandbox_root()
-    matches: list[str] = []
-
-    def _walk(directory: Path) -> None:
-        try:
-            children = sorted(directory.iterdir(), key=lambda p: (p.is_file(), p.name))
-        except PermissionError:
-            return
-
-        for child in children:
-            # Always skip noise dirs
-            if _is_skipped(child):
-                continue
-
-            rel = str(child.relative_to(root))
-
-            # Apply caller-supplied exclusions (match on name OR rel path)
-            if any(
-                fnmatch.fnmatch(child.name, xp) or fnmatch.fnmatch(rel, xp)
-                for xp in exclude_patterns
-            ):
-                continue
-
-            # Match the search pattern against the entry name
-            if fnmatch.fnmatch(child.name, pattern):
-                matches.append(rel)
-
-            if child.is_dir():
-                _walk(child)
-
-    _walk(start)
-
-    if not matches:
-        return f"No files matching '{pattern}' found under '{path}'."
-
-    return f"Found {len(matches)} match(es):\n" + "\n".join(matches)
-
-
-@tool
 def get_file_info(path: str) -> str:
     """
     Get detailed metadata about a file or directory.
@@ -637,7 +568,7 @@ def recall_path(alias: str) -> str:
         return (
             f"No path pinned under alias '{alias}'. "
             f"Available pins: {all_pins}. "
-            "If you have not pinned this path yet, use search_files to locate it first."
+            "If you have not pinned this path yet, use find_files_by_name to locate it first."
         )
     return f"📌 '{alias}' → '{_PATH_PINS[alias]}'"
 
@@ -928,7 +859,6 @@ LOCAL_TOOLS = [
     read_file_lines,
     list_directory,
     file_tree_shallow,
-    search_files,
     get_file_info,
     list_allowed_directories,
 
@@ -965,10 +895,6 @@ TOOL_STATUS_MAP = {
         f"Scanning directory tree of [white]'{args.get('subdirectory', '.')}'[/white] "
         f"(depth {args.get('max_depth', 2)})"
     ),
-    "search_files": lambda args: (
-        f"Searching for [white]'{args.get('pattern')}'[/white] "
-        f"inside [white]'{args.get('path')}'[/white]"
-    ),
     "get_file_info": lambda args: (
         f"Inspecting metadata for [white]'{args.get('path')}'[/white]"
     ),
@@ -994,6 +920,13 @@ TOOL_STATUS_MAP = {
         f"Creating directory [white]'{args.get('path')}'[/white]"
     ),
 }
+
+
+# Merge fileops tools
+LOCAL_TOOLS.extend(fileops.FILEOPS_TOOLS)
+
+# Merge status messages
+TOOL_STATUS_MAP.update(fileops.FILEOPS_TOOL_STATUS_MAP)
 
 
 def get_friendly_tool_message(tool_call: dict) -> str:
