@@ -21,6 +21,11 @@ Path pins        — memory:   pin_path, recall_path, recall_all_pins
                   not in the message list.
 """
 
+from anthropic.types import beta_invalid_request_error
+from anthropic.types import beta_invalid_request_error
+from anthropic.types import beta_invalid_request_error
+from anthropic.types import beta_invalid_request_error
+from anthropic.types import beta_invalid_request_error
 import datetime
 import stat
 from pathlib import Path
@@ -149,34 +154,38 @@ def _read_binary(path: Path) -> str:
     ext = path.suffix.lower()
 
     if ext == ".pdf":
-        if importlib.util.find_spec("pdfplumber") is None:
-            raise ImportError("pip install pdfplumber")
         if importlib.util.find_spec("pypdf") is None:
             raise ImportError("pip install pypdf")
 
-        import pdfplumber
         from pypdf import PdfReader
 
-        # 1. Extract static text, page by page
-        with pdfplumber.open(path) as pdf:
-            pages = [page.extract_text() or "" for page in pdf.pages]
-        text_output = "\n\n".join(
-            f"[Page {i+1}]\n{text}" for i, text in enumerate(pages) if text.strip()
-        )
-
-        # 2. Extract form field values (AcroForm), if any exist
         reader = PdfReader(path)
-        fields = reader.get_fields()
-        if fields:
-            field_lines = []
-            for name, f in fields.items():
-                value = f.get("/V")
-                if value:  # skip empty/unfilled fields
-                    field_lines.append(f"{name}: {value}")
-            if field_lines:
-                text_output += "\n\n[Form Field Values]\n" + "\n".join(field_lines)
+        text_output = ""
 
-        return text_output
+        # 1. Extract text page by page
+        for i, page in enumerate(reader.pages):
+            page_text = page.extract_text() or ""
+            if page_text.strip():
+                text_output += f"[Page {i+1}]\n{page_text.strip()}\n\n"
+
+        # 2. Extract form fields (AcroForm)
+        try:
+            fields = reader.get_fields()
+            if fields:
+                field_lines = []
+                for name, field in fields.items():
+                    value = field.value
+                    if value is not None:
+                        field_lines.append(f"{name}: {value}")
+                    else:
+                        # Optional: show field name even if empty
+                        field_lines.append(f"{name}: [empty]")
+                if field_lines:
+                    text_output += "[Form Field Values]\n" + "\n".join(field_lines)
+        except Exception as e:
+            text_output += f"\n[Form Field Extraction Failed: {e}]"
+
+        return text_output.strip()
 
     if ext in {".xlsx", ".xls"}:
         if importlib.util.find_spec("openpyxl") is None:
@@ -212,35 +221,23 @@ def _read_binary(path: Path) -> str:
 @tool
 def search_index(query: str) -> str:
     """
-    Semantic search over the RAG index — finds content by MEANING, not exact
-    text. Use FIRST for conceptual questions ("what does the contract say
-    about termination", "meeting notes from January").
-
-    Indexed scope: general documents only — .txt .md .pdf .docx .xlsx .csv.
-    Code, config, logs, and other structured/technical files are NOT
-    indexed — use search_file_contents for those, or for exact string/ID
-    matches.
-
-    Search tool tiers (cheapest -> most expensive):
-      search_index (this)      meaning match, indexed doc types only
-      find_files_by_name       filename/glob match, all types, no content read
-      search_file_contents     exact/regex match, ALL readable types incl. code
-      preview_files_for_review last resort: open a shortlist and read directly
-
-    Examples:
-      "What does the contract say about termination?"   -> search_index
-      "Find the function that calculates shipping cost" -> search_file_contents
-      "Find anything named like an invoice"              -> find_files_by_name
-      "Is there a bill for about ₹15,000?"               -> none reliably —
-          try search_file_contents variants, then fall through the tiers
-
-    Returns top snippets with file path and position; use read_file_lines to
-    see more context around one.
-
+    Search the local RAG index for content relevant to a query.
+ 
+    This is the FIRST tool to call for any question that involves finding
+    information inside files — before reading any file directly.
+ 
+    The index covers all text-based files in the sandbox:
+    .txt, .md, .pdf, .docx, .xlsx, .py, .json, .csv, and more.
+ 
+    Returns the top matching snippets with their file path and position.
+    If a snippet looks relevant, use read_file_lines to read more context
+    around it in the original file.
+ 
     Args:
-        query: Plain-language description of what you're looking for.
+        query: Plain-language description of what you are looking for.
+               e.g. "quarterly budget figures" or "meeting notes from January"
     """
-    from Cowork.cowork_rag import get_rag
+    from Cowork.cowork_rag import get_rag   # adjust import path to match your project
     rag = get_rag()
     if rag is None:
         return "RAG index is not initialised. This is a bug — please report it."
@@ -251,19 +248,38 @@ def search_index(query: str) -> str:
 @tool
 def read_file(path: str, head: int = 0, tail: int = 0) -> str:
     """
-    Read a file as plain text. Handles text files (raw UTF-8) and binary
-    docs transparently: .pdf page-by-page ([Page N]), .docx paragraphs,
-    .xlsx/.xls sheets as tab-separated tables ([Sheet: name]).
+    Read the contents of any file and return it as plain text.
 
-    Default to head=50 on unknown/large files — avoid full reads on logs,
-    big CSVs, or long source files; use read_file_lines for targeted ranges
-    instead. Full reads are for small files or when complete content is
-    genuinely needed.
+    RECOMMENDED WORKFLOW:
+    - Start with `head=50` to understand the file's structure and size.
+    - When search_index (RAG) returns specific line numbers, prefer `read_file_lines`.
+    - Use full read (`head=0, tail=0`) only for small-to-medium files or when you 
+      genuinely need the entire content (e.g. small scripts, configs, short notes).
+
+    Handles two categories transparently:
+
+    Text-based files (.txt, .md, .py, .json, .csv, .yaml, .html, etc.)
+        Raw UTF-8 content is returned as-is.
+
+    Binary document formats
+        .pdf   — text extracted page by page, labelled [Page N]
+        .docx  — all paragraph text extracted in order
+        .xlsx/.xls — every sheet as tab-separated table, labelled [Sheet: name]
+
+    IMPORTANT:
+    - Always start with `head=50` on unknown or potentially large files.
+    - Avoid full reads on large files (logs, big CSVs, long source files, etc.).
+      Use `read_file_lines` with targeted ranges or multiple calls instead.
+    - Full reads are mainly justified for summarization of small files, 
+      code review of scripts, or when the complete content is genuinely required.
+
+    For precise line-range reading (especially after RAG), use `read_file_lines`.
 
     Args:
         path: Relative path to the file.
         head: If > 0, return only the first N lines.
-        tail: If > 0, return only the last N lines. Cannot combine with head.
+        tail: If > 0, return only the last N lines.
+              Cannot be combined with head.
     """
     if head > 0 and tail > 0:
         return "Error: Cannot specify both `head` and `tail` simultaneously."
@@ -305,14 +321,23 @@ def read_file(path: str, head: int = 0, tail: int = 0) -> str:
 @tool
 def read_file_lines(path: str, start_line: int, end_line: int) -> str:
     """
-    Read a specific 1-indexed, inclusive line range, with line numbers shown.
-    Max 500 lines per call. Use to confirm exact target lines before
-    edit_file_lines, without pulling a whole large file into context.
+    Read a specific line range from a text file, with line numbers shown.
+    Lines are 1-indexed and inclusive on both ends. Maximum 500 lines per call.
+
+    Use this BEFORE edit_file_lines to confirm you are targeting the correct
+    lines. This lets you work surgically on large files without pulling their
+    full content into context.
+
+    Typical workflow
+    ----------------
+    1. read_file(path, head=50)           — understand structure, find region
+    2. read_file_lines(path, N, M)        — confirm exact lines before editing
+    3. edit_file_lines(path, N, M, ...)   — make the surgical replacement
 
     Args:
-        path: Relative path to the file.
+        path:       Relative path to the file.
         start_line: First line to read (1-indexed).
-        end_line: Last line to read (inclusive).
+        end_line:   Last line to read (inclusive).
     """
     if start_line < 1:
         return "Error: start_line must be >= 1."
@@ -388,17 +413,27 @@ def list_directory(path: str = ".") -> str:
 @tool
 def file_tree_shallow(subdirectory: str = ".", max_depth: int = 2, max_entries: int = 200) -> str:
     """
-    Recursive file/folder tree, depth-limited and entry-capped so it can't
-    flood the context. Use as the FIRST tool on an unknown project — start
-    at root with max_depth=2, then drill into a specific subdirectory with
-    higher max_depth if needed. Prefer narrowing the subdirectory over
-    raising max_depth past 4 at the root.
+    Show a recursive visual tree of files and folders — token-safe.
+
+    Unlike an unlimited tree dump, this tool is depth-limited and entry-capped
+    so it never floods the context window on large or deeply nested projects.
+
+    Use this as the FIRST tool when exploring any unknown project. If you need
+    to go deeper into a specific subdirectory, call again with that path as the
+    root and a higher max_depth.
+
+    Rules of thumb
+    --------------
+    - Start at root with max_depth=2 to understand the project shape.
+    - Drill into a specific folder: file_tree_shallow("src/billing", max_depth=3)
+    - When the cap warning appears, narrow the subdirectory instead of raising it.
+    - Do NOT use this with max_depth > 4 on the project root.
 
     Args:
         subdirectory: Relative path to start the tree from. Defaults to ".".
-        max_depth: How many levels deep to recurse. Default 2, hard max 6.
-        max_entries: Stop after this many entries (default 200); a warning
-            is appended when hit.
+        max_depth:    How many levels deep to recurse. Default 2. Hard max 6.
+        max_entries:  Stop emitting after this many entries to prevent token
+                      floods. Default 200. A warning is appended when hit.
     """
     try:
         target = _safe_path(subdirectory)
@@ -522,17 +557,24 @@ def list_allowed_directories() -> str:
 @tool
 def pin_path(alias: str, path: str) -> str:
     """
-    Save a file path under a short alias, in process memory — survives
-    context summarisation, unlike a path sitting in an old message. Call
-    this immediately after locating a file you'll need later.
+    Save a file path under a short alias so it survives context summarisation.
 
-    Examples:
-      pin_path("target", "src/billing/formatters/pdf_renderer.py")
-      pin_path("config", "infra/prod/values.yaml")
+    The summariser compresses old tool outputs out of the message list. A path
+    discovered 10 turns ago may no longer be in context when you need to act
+    on it. Pinned paths live in process memory — the summariser cannot touch them.
+
+    ALWAYS call this immediately after finding a file you plan to use later,
+    before reading it or doing anything else.
+
+    Examples
+    --------
+    pin_path("target",  "src/billing/formatters/pdf_renderer.py")
+    pin_path("config",  "infrastructure/k8s/prod/values.yaml")
+    pin_path("tests",   "tests/unit/billing/test_invoice.py")
 
     Args:
-        alias: Short memorable name (e.g. "target", "config").
-        path: The relative file path to save.
+        alias: A short memorable name for this path (e.g. "target", "config").
+        path:  The relative file path to save.
     """
     _PATH_PINS[alias] = path
     return f"📌 Pinned '{alias}' → '{path}'. Use recall_path('{alias}') to retrieve it later."
@@ -541,8 +583,10 @@ def pin_path(alias: str, path: str) -> str:
 @tool
 def recall_path(alias: str) -> str:
     """
-    Retrieve a path pinned earlier via pin_path, by its alias. Use when
-    you need to act on a file but aren't sure its path is still in context.
+    Retrieve a previously pinned file path by its alias.
+
+    Use this whenever you need to act on a file but cannot be certain its
+    path is still in your active context (it may have been summarised away).
 
     Args:
         alias: The alias used when pin_path was called.
@@ -560,8 +604,11 @@ def recall_path(alias: str) -> str:
 @tool
 def recall_all_pins() -> str:
     """
-    List every currently pinned path. Useful at the start of a multi-step
-    task, or to re-orient after a long tool-call chain before writing.
+    List every currently pinned path.
+
+    Call this at the start of any multi-step task to remind yourself what
+    files you have already located, or after a long chain of tool calls
+    to re-orient before taking a write action.
     """
     if not _PATH_PINS:
         return "No paths are currently pinned. Use pin_path to save file locations."
@@ -577,18 +624,38 @@ def create_text_file(
     create_parents: bool = True,
 ) -> str:
     """
-    Create a NEW text file with the given content. Refuses if the path
-    already exists (use edit_file_lines to modify an existing file) or if
-    the extension isn't a supported text type — covers common docs,
-    config/data, web, and source-code extensions (.txt/.md/.json/.yaml/.py/
-    .js/.ts/... — a refusal returns the full allowed list). Binary formats
-    (.docx/.xlsx/.pdf) aren't writable here; they need structured
-    serialization.
+    Create a NEW text file at the given relative path with the provided content.
+
+    Safety guarantees
+    -----------------
+    - Will NEVER overwrite an existing file or directory. If the path already
+      exists the operation is aborted immediately and an error is returned.
+    - The resolved path must stay inside the sandbox root; any traversal attempt
+      (e.g. "../../etc/passwd") is blocked before any I/O occurs.
+    - Only recognised text-based extensions are accepted (see list below).
+    - Parent directories are created automatically when `create_parents=True`
+      (the default), as long as they remain inside the sandbox.
+
+    To edit an existing file, use edit_file_lines instead.
+
+    Supported extensions
+    --------------------
+    Documents/notes : .txt .md .markdown .rst .org .tex
+    Config/data     : .json .jsonl .ndjson .yaml .yml .toml .ini .cfg .conf .env
+    Web/markup      : .html .htm .css .scss .sass .xml .svg
+    Source code     : .py .pyi .js .mjs .cjs .ts .tsx .jsx .sh .bash .zsh .fish
+                      .rb .go .rs .java .kt .scala .c .cpp .cc .h .hpp .cs .fs
+                      .php .lua .r .sql
+    Data/logs       : .csv .tsv .log
+    Misc text       : .diff .patch .gitignore .editorconfig
 
     Args:
-        path: Relative path for the new file, incl. name and extension.
-        content: UTF-8 text content to write.
-        create_parents: Create missing parent dirs automatically. Default True.
+        path:           Relative path for the new file, including its name and
+                        extension (e.g. "notes/meeting.md").
+        content:        UTF-8 text content to write.
+        create_parents: When True (default), any missing parent directories are
+                        created automatically. Set to False if you want the
+                        operation to fail when a parent does not exist.
     """
     # 1. Sandbox enforcement
     try:
@@ -655,26 +722,35 @@ def edit_file_lines(
     dry_run: bool = True,
 ) -> str:
     """
-    Replace line range [start_line, end_line] (inclusive, 1-indexed) in an
-    existing file with new_content. The tool for modifying existing files —
-    file must already exist (use create_text_file for new ones). Same
-    text-extension support as create_text_file.
+    Replace a specific line range in an existing file with new content.
+    This is the correct tool for any task that modifies an existing file.
 
-    dry_run=True (default): diff-style preview, writes nothing — always
-    call this first. dry_run=False: applies the change, only after the
-    user confirms the preview. Pass new_content="" to delete the range
-    with no replacement.
+    Safety design
+    -------------
+    - dry_run=True (the default): shows a diff-style preview WITHOUT writing.
+      Always call with dry_run=True first so the user can confirm the change.
+    - dry_run=False: actually writes the change. Only use after the user
+      confirms the preview is correct.
+    - The file MUST already exist. Use create_text_file for new files.
+    - Replaces lines [start_line, end_line] inclusive (1-indexed) with
+      new_content. All surrounding lines are untouched.
+    - Set new_content="" to delete the target lines without inserting anything.
+    - Only text-based extensions (same list as create_text_file) are supported.
 
-    Typical flow: read_file(head=50) to find the region -> read_file_lines
-    to confirm exact lines -> edit_file_lines(dry_run=True) to preview ->
-    user confirms -> edit_file_lines(dry_run=False) to apply.
+    Typical workflow
+    ----------------
+    1. read_file(path, head=50)                         — understand structure
+    2. read_file_lines(path, N, M)                      — confirm exact target
+    3. edit_file_lines(path, N, M, new, dry_run=True)   — preview the change
+    4. User confirms the preview looks correct
+    5. edit_file_lines(path, N, M, new, dry_run=False)  — apply it
 
     Args:
-        path: Relative path to the file.
-        start_line: First line to replace (1-indexed).
-        end_line: Last line to replace (inclusive).
-        new_content: Replacement text. Pass "" to delete the range.
-        dry_run: If True (default), preview without writing.
+        path:        Relative path to the file.
+        start_line:  First line to replace (1-indexed).
+        end_line:    Last line to replace (inclusive).
+        new_content: Replacement text. Pass "" to delete the range entirely.
+        dry_run:     If True (default), show a preview without writing anything.
     """
     if start_line < 1:
         return "Error: start_line must be >= 1."
@@ -764,8 +840,16 @@ def edit_file_lines(
 @tool
 def make_directory(path: str) -> str:
     """
-    Create a directory (and missing parents). Idempotent — succeeds
-    silently if it already exists; refuses if the path exists as a file.
+    Create a new directory at the given relative path, including any missing
+    intermediate parents. Idempotent: succeeds silently if the directory
+    already exists.
+
+    Safety guarantees
+    -----------------
+    - Will NOT fail or overwrite if the directory already exists.
+    - Will NOT touch any existing files or directories inside the path.
+    - The resolved path must stay inside the sandbox root.
+    - Will refuse if the path already exists as a *file*.
 
     Args:
         path: Relative path of the directory to create (e.g. "reports/q3").

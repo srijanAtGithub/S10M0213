@@ -112,17 +112,23 @@ def _move_to_trash(target: Path) -> Path:
 @tool
 def copy_file(source: str, destination: str, overwrite: bool = False) -> str:
     """
-    Copy a file within the sandbox; source is left untouched.
+    Copy a file to a new location within the sandbox. The source is left
+    untouched — this only duplicates it.
 
-    Refuses to overwrite an existing destination unless overwrite=True.
-    Limited to readable extensions (text-based + pdf/docx/xlsx — archives,
-    images, audio/video not yet supported). Destination parent dirs are
-    created automatically.
+    Safety guarantees
+    ------------------
+    - Both `source` and `destination` must resolve inside the sandbox.
+    - Refuses to overwrite an existing file at `destination` unless
+      `overwrite=True` is explicitly passed.
+    - Scoped to readable extensions only (text-based files + PDF/docx/xlsx).
+      Archives, images, and audio/video are not yet supported by this tool.
+    - Parent directories of `destination` are created automatically.
 
     Args:
-        source: Relative path to the existing file.
+        source:      Relative path to the existing file.
         destination: Relative path to copy it to, including filename.
-        overwrite: Replace an existing destination file. Default False.
+        overwrite:   If True, replaces an existing file at destination.
+                     Default False (refuses instead).
     """
     try:
         src = _safe_path(source)
@@ -163,16 +169,23 @@ def copy_file(source: str, destination: str, overwrite: bool = False) -> str:
 @tool
 def move_file(source: str, destination: str, overwrite: bool = False) -> str:
     """
-    Move (relocate) a file within the sandbox. For same-folder renaming,
-    prefer rename_file — same operation, clearer intent.
+    Move (relocate into a different folder) an existing file within the
+    sandbox. For renaming a file in place, prefer `rename_file` — same
+    underlying operation, but the name better matches that intent.
 
-    Same safety behavior as copy_file: refuses to overwrite unless
-    overwrite=True, limited to readable extensions, creates parent dirs.
+    Safety guarantees
+    ------------------
+    - Both `source` and `destination` must resolve inside the sandbox.
+    - Refuses to overwrite an existing file at `destination` unless
+      `overwrite=True` is explicitly passed.
+    - Scoped to readable extensions only, same as copy_file.
+    - Parent directories of `destination` are created automatically.
 
     Args:
-        source: Relative path to the existing file.
+        source:      Relative path to the existing file.
         destination: Relative path to move it to, including filename.
-        overwrite: Replace an existing destination file. Default False.
+        overwrite:   If True, replaces an existing file at destination.
+                     Default False (refuses instead).
     """
     try:
         src = _safe_path(source)
@@ -212,14 +225,18 @@ def move_file(source: str, destination: str, overwrite: bool = False) -> str:
 @tool
 def rename_file(path: str, new_name: str) -> str:
     """
-    Rename a file in place (same folder). Thin wrapper over move_file for
-    the common "just rename it" case; use move_file to also change folder.
+    Rename a file in place, keeping it in the same folder. A thin,
+    clearer-intent wrapper over move_file for the common "just rename it"
+    case — use move_file instead if you also need to relocate it to a
+    different folder.
 
     Args:
-        path: Relative path to the existing file.
-        new_name: New filename only (no slashes), e.g. "final_report.md".
-            Extension optional — if omitted, the source file's current
-            extension is kept; if given, must be a supported extension.
+        path:     Relative path to the existing file.
+        new_name: New filename ONLY (no slashes) — e.g. "final_report.md".
+                  Extension is optional — if omitted, the source file's
+                  current extension is kept (e.g. "test2" on "test.py"
+                  becomes "test2.py"). If provided, it must be one of the
+                  currently supported extensions.
     """
     if "/" in new_name or "\\" in new_name:
         return (
@@ -276,14 +293,18 @@ def rename_file(path: str, new_name: str) -> str:
 @tool
 def delete_file(path: str, dry_run: bool = True) -> str:
     """
-    Delete a file. Never permanent — moves it to a hidden sandbox-local
-    trash folder (.sicily-trash/), recoverable by hand.
+    Delete a file. This NEVER permanently destroys data — the file is moved
+    into a hidden sandbox-local trash folder (.sicily-trash/), not unlinked.
+    It can always be recovered by hand afterward.
 
-    dry_run=True (default): preview only, writes nothing. dry_run=False:
-    actually moves it to trash — only after the user confirms the preview.
+    Safety design (matches edit_file_lines)
+    ----------------------------------------
+    - dry_run=True (default): reports what WOULD happen, writes nothing.
+    - dry_run=False: actually moves the file to trash. Only use after the
+      user has confirmed the dry-run preview is what they want.
 
     Args:
-        path: Relative path to the file to delete.
+        path:    Relative path to the file to delete.
         dry_run: If True (default), preview only.
     """
     try:
@@ -322,15 +343,22 @@ def delete_file(path: str, dry_run: bool = True) -> str:
 @tool
 def delete_directory(path: str, recursive: bool = False, dry_run: bool = True) -> str:
     """
-    Delete a directory (and contents). Same non-destructive trash behavior
-    as delete_file. Refuses on a non-empty directory unless recursive=True
-    — a separate, louder guard from dry_run so an accidental call can't
-    silently wipe out more than expected.
+    Delete a directory. Like delete_file, this is non-destructive — the
+    whole directory is moved into .sicily-trash/, not unlinked.
+
+    Safety design
+    --------------
+    - Refuses on a non-empty directory unless `recursive=True` is passed —
+      a separate, louder guard from dry_run, so an accidental "delete this
+      folder" can't silently wipe out more than the caller expected.
+    - dry_run=True (default): lists what's inside and what would happen,
+      writes nothing.
+    - dry_run=False: actually moves the directory to trash.
 
     Args:
-        path: Relative path to the directory to delete.
+        path:      Relative path to the directory to delete.
         recursive: Must be True to delete a non-empty directory.
-        dry_run: If True (default), preview only.
+        dry_run:   If True (default), preview only.
     """
     try:
         target = _safe_path(path)
@@ -389,19 +417,31 @@ def delete_directory(path: str, recursive: bool = False, dry_run: bool = True) -
 def find_files_by_name(path: str, pattern: str, exclude_patterns: list[str] = []) -> str:
     """
     STEP 1 of file discovery — find files by NAME/GLOB, not content.
-    Recursively matches filenames (e.g. "*.py", "invoice_*"). Returns
-    relative paths only, never reads file content. Cheapest search tool —
-    cost scales with match count, not tree size.
+    Recursively matches filenames against a glob pattern (e.g. "*.py",
+    "invoice_*", "*.pdf"). Returns relative paths only — never opens or
+    reads file content.
 
-    Use first whenever there's a filename/folder/extension hint (e.g.
-    "anything that looks like an invoice" -> pattern="*invoice*"). See
-    search_index's docstring for how the search tools fit together.
+    Use this first whenever there's any hint about filename, folder naming
+    convention, or extension (e.g. "find anything that looks like an
+    invoice" -> pattern="*invoice*" or "*receipt*"). It's the cheapest
+    possible search: cost is proportional to match count, not tree size.
+
+    How this fits with the other search tools
+    --------------------------------------------
+      search_index             -> meaning/concepts, INDEXED types only
+                                   (.txt .md .pdf .docx .xlsx .csv ...)
+      find_files_by_name (this)-> filename/glob match, ALL file types,
+                                   reads no content
+      search_file_contents     -> exact/regex match INSIDE file content,
+                                   ALL readable types incl. code
+      preview_files_for_review -> last resort: open a shortlist of files
+                                   and reason over their content directly
 
     Args:
-        path: Starting directory (relative path).
-        pattern: Glob pattern matched against each entry's name.
+        path:             Starting directory (relative path).
+        pattern:          Glob pattern matched against each entry's name.
         exclude_patterns: Optional glob patterns to exclude, matched
-            against both the entry name and relative path.
+                          against both the entry name and relative path.
     """
     import fnmatch
 
@@ -460,23 +500,65 @@ def search_file_contents(
     max_results: int = 50,
 ) -> str:
     """
-    STEP 2 of file discovery — grep-equivalent EXACT/regex search INSIDE
-    file content (literal matcher, NOT semantic). Searches every readable
-    file under `path` — text/code directly, PDF/docx/xlsx via extraction —
-    the full readable set, unlike search_index's narrower indexed subset.
-    Use for exact strings, IDs, function names, or file types search_index
-    skips (code, .json, .log, etc).
+    STEP 2 of file discovery — grep-equivalent EXACT/PATTERN search INSIDE
+    file content. This is a literal text/regex matcher, NOT semantic search.
 
-    If a vague/fuzzy/numeric query returns no matches, don't just retry the
-    same pattern — the response includes a suggested next step.
+    Searches every readable file under `path` — plain text/code files
+    directly, plus PDF/docx/xlsx via the same extraction read_file uses.
+    This is the key difference from search_index: search_index only covers
+    the narrower set of file types embedded into the RAG index at startup
+    (general documents), and answers conceptual/meaning-based questions.
+    This tool answers "does this exact string/pattern appear anywhere",
+    across EVERY readable file type — including source code, .json, .log,
+    and other extensions search_index intentionally skips.
+
+    WHEN TO USE WHICH SEARCH TOOL
+    --------------------------------
+      "What does the contract say about termination?"   -> search_index
+      "Find the function that calculates shipping cost" -> search_file_contents
+                                                              (try "shipping" plain,
+                                                              or regex="def.*shipping")
+      "Is there a file mentioning invoice INV-2291?"     -> search_file_contents
+                                                              (exact ID -> literal match)
+      "Is there a bill for around ₹15,000?"              -> NEITHER tool reliably
+                                                              finds this alone —
+                                                              see escalation path below.
+
+    ESCALATION PATH for vague / fuzzy / numeric queries
+    --------------------------------------------------------
+    A literal pattern has zero recall on phrasing that can't be predicted
+    exactly (e.g. "₹15,000" vs "Rs. 14,850" vs "fifteen thousand", or a
+    scanned PDF where the number isn't extractable text at all). When a
+    query is inherently fuzzy, don't just retry the same literal pattern —
+    work through this in order:
+      1. Try a handful of LIKELY literal variants in one or two calls
+         (e.g. "15000", "15,000", "15k" — or with regex=True a range like
+         "1[45][0-9]{3}" for "around 15000").
+      2. If that turns up nothing, narrow the candidate set structurally
+         first — use find_files_by_name on filenames/folders that
+         plausibly relate (e.g. "*invoice*", "*bill*", a "Receipts"
+         folder) rather than scanning the whole sandbox blindly.
+      3. Pass that shortlist to preview_files_for_review and reason over
+         the actual content yourself — this is the only way to catch
+         paraphrased amounts, rounded figures, or non-numeral phrasing.
+      4. If the shortlist is still too large to read (dozens+ of
+         candidates) and you're not converging, it is more honest and
+         cheaper to ask the user a clarifying question (rough date,
+         vendor, folder) than to brute-force read everything.
 
     Args:
-        pattern: Text to search for; literal substring unless regex=True.
-        path: Directory to search under (relative). Defaults to sandbox root.
-        regex: If True, compile `pattern` as a regular expression.
-        case_sensitive: Default False (like grep -i).
-        context_lines: Lines of context above/below each match. Default 0.
-        max_results: Cap on returned matches, default 50.
+        pattern:        Text to search for. Treated as a literal substring
+                         unless regex=True.
+        path:           Directory to search under (relative). Defaults to
+                         the sandbox root.
+        regex:          If True, `pattern` is compiled as a regular
+                         expression instead of matched literally.
+        case_sensitive: Default False (matches grep -i, usually what's
+                         wanted for natural-language-ish queries).
+        context_lines:  Lines of surrounding context above/below each
+                         match (like grep -C). Default 0.
+        max_results:    Stop after this many matches, to avoid flooding
+                         context on a common pattern. Default 50.
     """
     try:
         start = _safe_path(path)
@@ -550,19 +632,11 @@ def search_file_contents(
         note = f" ({len(files_skipped)} file(s) could not be read)" if files_skipped else ""
         return (
             f"No matches for '{pattern}' across {files_scanned} readable file(s) "
-            f"under '{path}'{note}.\n\n"
-            "If the query is vague, numeric, or paraphrased (amounts, dates, "
-            "rounded figures), a literal pattern has low recall — e.g. "
-            "'₹15,000' vs 'Rs. 14,850' vs 'fifteen thousand'. Try it this way:\n"
-            "  1. A couple of likely literal variants in one call (e.g. "
-            "\"15000\", \"15,000\" — or regex=True with \"1[45][0-9]{3}\").\n"
-            "  2. Still nothing -> narrow structurally with find_files_by_name "
-            "(filename/folder hints like \"*invoice*\" or a \"Receipts\" folder).\n"
-            "  3. Pass that shortlist to preview_files_for_review and read the "
-            "actual content — the only way to catch paraphrased or non-numeral "
-            "phrasing.\n"
-            "  4. Shortlist still large (dozens+)? Ask the user a clarifying "
-            "detail (date, vendor, folder) rather than brute-forcing it."
+            f"under '{path}'{note}.\n"
+            "If this query is vague, numeric, or paraphrased, see the "
+            "ESCALATION PATH in this tool's description — try "
+            "find_files_by_name to narrow candidates, then "
+            "preview_files_for_review."
         )
 
     header = f"Found {len(matches)} match(es) across {files_scanned} file(s) scanned"
@@ -575,23 +649,34 @@ def search_file_contents(
 def preview_files_for_review(paths: list[str], max_lines_each: int = 40) -> str:
     """
     STEP 3 (last resort) of file discovery — open several candidate files
-    at once and return their content for you to reason over directly.
-    Batches up to ~15 files into ONE call (vs. N read_file calls).
+    at once and return their content so YOU can reason over it directly.
 
-    Use only after both search_index and search_file_contents have found
-    nothing — typically a vague, numeric, or paraphrased query neither
-    literal nor semantic search reliably catches.
+    Use this only after both search_index and search_file_contents have
+    failed to find what the user wants — typically because the query is
+    vague, numeric, paraphrased, or about a file type outside the RAG
+    index. This is the fallback that catches things literal/semantic
+    search both miss: "a bill for around ₹15,000" might actually say
+    "Rs. 14,850" or "fourteen thousand eight hundred fifty" — no pattern
+    match or embedding reliably surfaces that, but reading the actual text
+    will.
 
-    Most expensive search tool in token terms — narrow with
-    find_files_by_name first rather than passing an unfiltered listing.
-    If the candidates can't be narrowed below a manageable shortlist
-    (dozens+), it's cheaper to ask the user a clarifying question (date,
-    vendor, folder) than to brute-force preview everything.
+    This batches up to ~15 files into ONE call (vs. N separate read_file
+    calls), each truncated to max_lines_each, so multiple candidates can
+    be compared in a single reasoning pass instead of paying a full round
+    trip per file.
+
+    Keep the candidate list as SMALL and well-justified as possible — this
+    is the most expensive search tool in token terms. Narrow with
+    find_files_by_name first (filename hints, folder, extension) rather
+    than passing an unfiltered directory listing. If the candidates can't
+    reasonably be narrowed below a manageable shortlist (dozens+), it is
+    cheaper and more reliable to ask the user a clarifying question
+    (rough date, vendor, folder) than to brute-force preview everything.
 
     Args:
-        paths: Relative paths to preview, recommended 3-15 files.
-        max_lines_each: Max lines read per file (default 40). Raise only
-            for the one or two files most suspected.
+        paths:          Relative paths to preview, recommended 3-15 files.
+        max_lines_each: Max lines read per file (default 40). Raise this
+                         only for the one or two files most suspected.
     """
     if not paths:
         return "No paths provided."
