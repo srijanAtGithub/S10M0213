@@ -151,10 +151,32 @@ def _read_binary(path: Path) -> str:
     if ext == ".pdf":
         if importlib.util.find_spec("pdfplumber") is None:
             raise ImportError("pip install pdfplumber")
+        if importlib.util.find_spec("pypdf") is None:
+            raise ImportError("pip install pypdf")
+
         import pdfplumber
+        from pypdf import PdfReader
+
+        # 1. Extract static text, page by page
         with pdfplumber.open(path) as pdf:
             pages = [page.extract_text() or "" for page in pdf.pages]
-        return "\n\n".join(f"[Page {i+1}]\n{text}" for i, text in enumerate(pages) if text.strip())
+        text_output = "\n\n".join(
+            f"[Page {i+1}]\n{text}" for i, text in enumerate(pages) if text.strip()
+        )
+
+        # 2. Extract form field values (AcroForm), if any exist
+        reader = PdfReader(path)
+        fields = reader.get_fields()
+        if fields:
+            field_lines = []
+            for name, f in fields.items():
+                value = f.get("/V")
+                if value:  # skip empty/unfilled fields
+                    field_lines.append(f"{name}: {value}")
+            if field_lines:
+                text_output += "\n\n[Form Field Values]\n" + "\n".join(field_lines)
+
+        return text_output
 
     if ext in {".xlsx", ".xls"}:
         if importlib.util.find_spec("openpyxl") is None:
