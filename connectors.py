@@ -107,3 +107,24 @@ CONNECTORS = {
     "tavily":      load_tavily_tools,
     "github":      load_github_tools,
 }
+
+# Some connectors register more than one MCP server under the hood
+# (e.g. "swiggy" spins up both "swiggy-food" and "swiggy-instamart").
+# This maps a connector name -> the tool_manager server name(s) it owns,
+# so /connect_*, /disconnect_*, and the "is this loaded?" check all stay
+# correct without needing a special case anywhere else.
+# Any connector not listed here is assumed to register a server with the
+# same name as the connector itself (the common case).
+CONNECTOR_SERVERS = {
+    "swiggy": ["swiggy-food", "swiggy-instamart"],
+}
+
+
+def get_connector_servers(name: str) -> list[str]:
+    """Server name(s) a given connector registers with the tool_manager."""
+    return CONNECTOR_SERVERS.get(name, [name])
+
+
+def is_connector_loaded(name: str, loaded_servers) -> bool:
+    """True if any server belonging to this connector is currently loaded."""
+    return any(server in loaded_servers for server in get_connector_servers(name))
