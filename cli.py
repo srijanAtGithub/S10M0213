@@ -4,6 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
+from configuration import REQUIRED_KEYS
+
 try:
     from importlib.metadata import version as pkg_version
     __version__ = pkg_version("sicily")
@@ -28,7 +30,7 @@ def ensure_initialized(required_keys=None):
 
     # Default to all keys if none specified
     if required_keys is None:
-        required_keys = ["OPENAI_API_KEY", "TELEGRAM_BOT_TOKEN", "TAVILY_API_KEY"]
+        required_keys = REQUIRED_KEYS
 
     try:
         with open(SETTINGS_PATH, "r") as f:

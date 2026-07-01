@@ -1,9 +1,9 @@
 import json
 from telegram import Update, BotCommand
-from telegram.ext import CommandHandler, ContextTypes
+from telegram.ext import CommandHandler, MessageHandler, filters, ContextTypes
 
 from agent import tool_manager
-from connectors import CONNECTORS
+from connectors import CONNECTORS, get_connector_servers, is_connector_loaded
 
 
 # TELEGRAM COMMANDS EXECUTORS
@@ -68,114 +68,93 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No active session.")
 
 
-async def connectors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    available = "\n".join(f"• {name}" for name in CONNECTORS.keys())
+# DYNAMIC CONNECTOR COMMANDS
+#
+# Instead of one CommandHandler per connector (which forces every
+# /connect_x /disconnect_x pair to be hand-registered here and shown in the
+# Telegram "/" menu forever), we:
+#   1. Only ever register 5 static commands.
+#   2. /connectors and /loaded_connectors render the relevant connector
+#      names as "/connect_<name>" / "/disconnect_<name>" text — Telegram
+#      auto-detects these as tappable commands even though they aren't in
+#      the bot's command menu, so tapping one sends it straight to the chat.
+#   3. A single generic handler below catches any /connect_* or
+#      /disconnect_* command and dispatches to the right connector loader,
+#      so adding a new entry to CONNECTORS in connectors.py is the only
+#      change needed to support it end-to-end.
 
+async def connectors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    loaded = tool_manager.loaded_servers
+    available = [name for name in CONNECTORS if not is_connector_loaded(name, loaded)]
+
+    if not available:
+        await update.message.reply_text("✅ All connectors are already connected!")
+        return
+
+    commands = "\n".join(f"/connect_{name}" for name in available)
     await update.message.reply_text(
-        f"📦 Available connectors:\n\n"
-        f"{available}\n\n"
+        f"Available connectors:\n\n{commands}"
     )
 
 
 async def loaded_connectors_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loaded = tool_manager.loaded_servers
-    if not loaded:
+    connected = [name for name in CONNECTORS if is_connector_loaded(name, loaded)]
+
+    if not connected:
         await update.message.reply_text("🔌 No connectors loaded currently.")
         return
-    text = "\n".join(f"  • {s}" for s in loaded)
-    await update.message.reply_text(f"🔌 Loaded connectors:\n{text}")
+
+    commands = "\n".join(f"/disconnect_{name}" for name in connected)
+    await update.message.reply_text(
+        f"Loaded connectors:\n\n{commands}"
+    )
 
 
-async def connect_swiggy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _handle_connect(update: Update, name: str):
     loaded = tool_manager.loaded_servers
-    if "swiggy-food" in loaded or "swiggy-instamart" in loaded:
-        await update.message.reply_text("⚠️ Swiggy is already connected.")
+    if is_connector_loaded(name, loaded):
+        await update.message.reply_text(f"⚠️ {name.title()} is already connected.")
         return
-    await update.message.reply_text("⏳ Connecting Swiggy...")
-    await CONNECTORS["swiggy"](tool_manager)
-    await update.message.reply_text("✅ Swiggy connected! Food and Instamart tools are ready.")
 
-
-async def disconnect_swiggy_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tool_manager.unregister("swiggy-food")
-    tool_manager.unregister("swiggy-instamart")
-    await update.message.reply_text("🗑️ Swiggy disconnected. All Swiggy tools unloaded.")
-
-
-async def connect_gmail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    loaded = tool_manager.loaded_servers
-    if "gmail" in loaded:
-        await update.message.reply_text("⚠️ Gmail is already connected.")
-        return
-    
-    await update.message.reply_text("⏳ Connecting Gmail...\nBrowser will open for login.")
+    await update.message.reply_text(f"⏳ Connecting {name.title()}...")
     try:
-        await CONNECTORS["gmail"](tool_manager)
-        await update.message.reply_text("✅ Gmail connected successfully!\nYou can now use Gmail tools.")
+        await CONNECTORS[name](tool_manager)
+        await update.message.reply_text(f"✅ {name.title()} connected successfully!")
     except Exception as e:
-        await update.message.reply_text(f"❌ Failed to connect Gmail:\n{str(e)}")
+        await update.message.reply_text(f"❌ Failed to connect {name.title()}:\n{str(e)}")
 
 
-async def disconnect_gmail_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tool_manager.unregister("gmail")
-    await update.message.reply_text("🗑️ Gmail disconnected.")
-
-
-async def connect_telegram_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _handle_disconnect(update: Update, name: str):
     loaded = tool_manager.loaded_servers
-    if "telegram" in loaded:
-        await update.message.reply_text("⚠️ Telegram is already connected.")
+    if not is_connector_loaded(name, loaded):
+        await update.message.reply_text(f"⚠️ {name.title()} isn't connected.")
         return
-    
-    await update.message.reply_text("⏳ Connecting Telegram MCP...")
-    try:
-        await CONNECTORS["telegram"](tool_manager)
-        await update.message.reply_text("✅ Telegram connected successfully! You can now ask me to read or send messages.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Failed to connect Telegram:\n{str(e)}")
+
+    for server in get_connector_servers(name):
+        tool_manager.unregister(server)
+    await update.message.reply_text(f"🗑️ {name.title()} disconnected.")
 
 
-async def disconnect_telegram_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tool_manager.unregister("telegram")
-    await update.message.reply_text("🗑️ Telegram disconnected.")
+async def connector_command_dispatch(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Catches every /command that isn't one of the 5 statically registered
+    ones. Only /connect_<name> and /disconnect_<name> are recognized;
+    anything else (typos, stale commands, etc.) is ignored silently.
+    """
+    raw = update.message.text or ""
+    command = raw.split()[0][1:]           # strip leading "/"
+    command = command.split("@")[0]        # strip "@BotName" (group chats)
 
-
-async def connect_tavily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    loaded = tool_manager.loaded_servers
-    if "tavily" in loaded:
-        await update.message.reply_text("⚠️ Tavily is already connected.")
-        return
-    
-    await update.message.reply_text("⏳ Connecting Tavily MCP...")
-    try:
-        await CONNECTORS["tavily"](tool_manager)
-        await update.message.reply_text("✅ Tavily connected successfully!\nYou can now use search and web tools.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Failed to connect Tavily:\n{str(e)}")
-
-
-async def disconnect_tavily_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tool_manager.unregister("tavily")
-    await update.message.reply_text("🗑️ Tavily disconnected.")
-
-
-async def connect_github_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    loaded = tool_manager.loaded_servers
-    if "github" in loaded:
-        await update.message.reply_text("⚠️ GitHub is already connected.")
-        return
-    
-    await update.message.reply_text("⏳ Connecting GitHub MCP...")
-    try:
-        await CONNECTORS["github"](tool_manager)
-        await update.message.reply_text("✅ GitHub connected successfully!\nYou can now search repos, read files, and manage issues.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Failed to connect GitHub:\n{str(e)}")
-
-
-async def disconnect_github_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tool_manager.unregister("github")
-    await update.message.reply_text("🗑️ GitHub disconnected.")
+    if command.startswith("connect_"):
+        name = command[len("connect_"):]
+        if name in CONNECTORS:
+            await _handle_connect(update, name)
+    elif command.startswith("disconnect_"):
+        name = command[len("disconnect_"):]
+        if name in CONNECTORS:
+            await _handle_disconnect(update, name)
+    # else: not a recognized command shape — ignore silently.
 
 
 # REGISTRATION HELPERS
@@ -186,34 +165,18 @@ def setup_command_handlers(telegram_app):
     telegram_app.add_handler(CommandHandler("status", status_command))
     telegram_app.add_handler(CommandHandler("connectors", connectors_command))
     telegram_app.add_handler(CommandHandler("loaded_connectors", loaded_connectors_command))
-    telegram_app.add_handler(CommandHandler("connect_swiggy", connect_swiggy_command))
-    telegram_app.add_handler(CommandHandler("disconnect_swiggy", disconnect_swiggy_command))
-    telegram_app.add_handler(CommandHandler("connect_gmail", connect_gmail_command))
-    telegram_app.add_handler(CommandHandler("disconnect_gmail", disconnect_gmail_command))
-    telegram_app.add_handler(CommandHandler("connect_telegram", connect_telegram_command))
-    telegram_app.add_handler(CommandHandler("disconnect_telegram", disconnect_telegram_command))
-    telegram_app.add_handler(CommandHandler("connect_tavily", connect_tavily_command))
-    telegram_app.add_handler(CommandHandler("disconnect_tavily", disconnect_tavily_command))
-    telegram_app.add_handler(CommandHandler("connect_github", connect_github_command))
-    telegram_app.add_handler(CommandHandler("disconnect_github", disconnect_github_command))
+
+    # Catch-all for /connect_* and /disconnect_* — must be added last so the
+    # 5 static commands above get first refusal within the handler group.
+    telegram_app.add_handler(MessageHandler(filters.COMMAND, connector_command_dispatch))
 
 
 async def setup_bot_commands(telegram_app):
-    """Sets the UI menu commands in Telegram."""
+    """Sets the UI menu commands in Telegram — kept to the fixed 5."""
     await telegram_app.bot.set_my_commands([
         BotCommand("start",             "Start the bot"),
         BotCommand("stop",              "Stop the current process"),
         BotCommand("status",            "Show your session info"),
-        BotCommand("connectors",        "Show available connectors"),
-        BotCommand("loaded_connectors", "Show currently loaded connectors"),
-        BotCommand("connect_swiggy",    "Connect Swiggy (food + instamart)"),
-        BotCommand("disconnect_swiggy", "Disconnect Swiggy tools"),
-        BotCommand("connect_gmail",     "Connect Gmail"),
-        BotCommand("disconnect_gmail",  "Disconnect Gmail"),
-        BotCommand("connect_telegram",  "Connect Telegram"),
-        BotCommand("disconnect_telegram", "Disconnect Telegram"),
-        BotCommand("connect_tavily",    "Connect Tavily search"),
-        BotCommand("disconnect_tavily", "Disconnect Tavily"),
-        BotCommand("connect_github",    "Connect GitHub"),
-        BotCommand("disconnect_github", "Disconnect GitHub"),
+        BotCommand("connectors",        "Show available connectors to connect"),
+        BotCommand("loaded_connectors", "Show connected connectors (and disconnect them)"),
     ])
