@@ -56,7 +56,7 @@ from agent import maybe_summarize
 log = structlog.get_logger()
 
 BANNER = """
-╔═════════ Sicily Cowork v2.5.7 ════════════╦════════════════ What Sicily Can Do ════════════════╗
+╔═════════ Sicily Cowork v2.5.8 ════════════╦════════════════ What Sicily Can Do ════════════════╗
 ║                                           ║                                                    ║
 ║                                           ║    Sicily can search, inspect, read, organize,     ║
 ║  Files are sandboxed to this directory.   ║    and safely modify the contents of your          ║
