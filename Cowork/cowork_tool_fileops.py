@@ -41,13 +41,6 @@ Safety model (matches cowork_tools.py conventions)
   - Destructive and relocating-into-existing-path ops follow the same
     dry_run=True-by-default pattern as edit_file_lines: preview first,
     apply only once the caller explicitly passes dry_run=False.
-
-Integration checklist
-----------------------
-  1. Remove (or keep, your call) the old `search_files` tool in
-     cowork_tools.py — `find_files_by_name` here is a renamed superset of it.
-  2. Merge FILEOPS_TOOLS into LOCAL_TOOLS, and FILEOPS_TOOL_STATUS_MAP into
-     TOOL_STATUS_MAP, at your existing export points.
 """
 
 import re
@@ -240,7 +233,10 @@ def rename_file(path: str, new_name: str) -> str:
     Args:
         path:     Relative path to the existing file.
         new_name: New filename ONLY (no slashes) — e.g. "final_report.md".
-                  Must include the extension.
+                  Extension is optional — if omitted, the source file's
+                  current extension is kept (e.g. "test2" on "test.py"
+                  becomes "test2.py"). If provided, it must be one of the
+                  currently supported extensions.
     """
     if "/" in new_name or "\\" in new_name:
         return (
@@ -258,11 +254,22 @@ def rename_file(path: str, new_name: str) -> str:
     if not src.is_file():
         return f"'{path}' is a directory. rename_file only handles files."
 
-    new_ext = Path(new_name).suffix.lower()
-    if new_ext not in READABLE_EXTENSIONS:
-        return f"Refused: '{new_ext}' is outside the currently supported file set."
+    new_name_path = Path(new_name)
+    if new_name_path.suffix:
+        new_ext = new_name_path.suffix.lower()
+        if new_ext not in READABLE_EXTENSIONS:
+            return f"Refused: '{new_ext}' is outside the currently supported file set."
+        final_name = new_name
+    else:
+        # No extension given — most natural reading of "rename X to Y" is
+        # "keep it the same kind of file, just change the name." Inherit
+        # the source file's existing (already-valid) extension rather than
+        # rejecting; this only kicks in when new_name has no suffix at all —
+        # an explicitly wrong extension is still refused above.
+        final_name = new_name + src.suffix
 
-    dest_rel = str(Path(path).parent / new_name)
+    dest_rel = str(Path(path).parent / final_name)
+
     try:
         dst = _safe_path(dest_rel)
     except PermissionError as e:
@@ -274,7 +281,7 @@ def rename_file(path: str, new_name: str) -> str:
     try:
         shutil.move(str(src), str(dst))
     except Exception as e:
-        return f"Could not rename '{path}' -> '{new_name}': {e}"
+        return f"Could not rename '{path}' -> '{final_name}': {e}"
 
     return f"Renamed '{path}' -> '{dest_rel}'."
 

@@ -44,7 +44,7 @@ import os
 import pickle
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 import structlog
 from langchain_chroma import Chroma
@@ -536,10 +536,34 @@ class SicilyRAG:
         return len(stale)
 
 
-    def index_session(self) -> dict:
+    def count_pending(self) -> int:
+        """
+        Cheap upfront check: how many files WOULD be (re)indexed if
+        index_session() ran right now — without doing any extraction or
+        embedding work. Just a directory walk + mtime comparison against
+        the registry.
+
+        Used by callers to decide, before rendering anything, whether to
+        show a progress bar (real work ahead) or a lightweight "up to
+        date" message (nothing but cleanup/TF-IDF resync to do).
+        """
+        all_files = self._walk_sandbox()
+        return sum(1 for fp in all_files if self._should_reindex(fp))
+
+
+    def index_session(self, progress_callback: Optional[Callable[[Path, int, int], None]] = None,) -> dict:
         """
         Run at Sicily startup.  Walks the sandbox and brings the index
         in sync with the current state of the filesystem.
+
+        Parameters
+        ----------
+        progress_callback   Optional. Called as
+                            progress_callback(file_path, current_index, total_to_index)
+                            right before each file that needs (re)indexing is
+                            processed. total_to_index is fixed upfront, so
+                            callers can render a real (determinate) progress
+                            bar instead of an indefinite spinner.
 
         Returns
         -------
@@ -566,38 +590,30 @@ class SicilyRAG:
             self._delete_file_chunks(abs_path)
             del self._registry[abs_path]
 
-        # Step 3 — index new / modified files
-        indexed = skipped = failed = 0
+        # Step 3 — index new / modified files.
+        # Figure out the exact worklist UP FRONT so we have a real total
+        # for a progress bar, instead of discovering the count as we go.
+        to_index = [fp for fp in all_files if self._should_reindex(fp)]
+        total_to_index = len(to_index)
+        skipped = len(all_files) - total_to_index
+        indexed = failed = 0
 
-        for fp in all_files:
-            if not self._should_reindex(fp):
-                skipped += 1
-                continue
+        for i, fp in enumerate(to_index, start=1):
+            if progress_callback is not None:
+                progress_callback(fp, i, total_to_index)
             try:
                 n = self._index_file(fp)
                 if n > 0:
                     indexed += 1
-                    log.info(
-                        "rag.indexed",
-                        path=str(fp),
-                        chunks=n,
-                    )
+                    # debug, not info — with a progress bar (Rich Live)
+                    # rendering, a stray per-file stdout write corrupts the
+                    # display. One summary line at the end is enough.
+                    # log.debug("rag.indexed", path=str(fp), chunks=n)
             except Exception as exc:
                 failed += 1
                 log.warning("rag.index_failed", path=str(fp), error=str(exc))
 
         self._save_registry()
-
-        # Sync TF-IDF — always rebuild, scoped to the current sandbox.
-        #
-        # Previously this skipped the rebuild (loading a cached pickle
-        # instead) when nothing changed, as a perf optimization. That's
-        # no longer safe: the cached pickle may have last been fit for
-        # a DIFFERENT sandbox session entirely, which would silently
-        # return stale or empty results for this one. Rebuilding is now
-        # cheap regardless — it's local sklearn fitting (no embedding
-        # API cost) bounded by THIS sandbox's file count, not the global
-        # cross-session corpus (see _rebuild_tfidf docstring).
         self._rebuild_tfidf()
 
         return {

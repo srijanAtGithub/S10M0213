@@ -29,9 +29,6 @@ import importlib
 
 from langchain_core.tools import tool
 
-import Cowork.cowork_tool_fileops as fileops
-
-
 # Noise directories — skipped in trees and searches
 SKIP_DIRS = {
     ".venv", "venv", "env", ".env",
@@ -921,12 +918,9 @@ TOOL_STATUS_MAP = {
     ),
 }
 
-
-# Merge fileops tools
-LOCAL_TOOLS.extend(fileops.FILEOPS_TOOLS)
-
-# Merge status messages
-TOOL_STATUS_MAP.update(fileops.FILEOPS_TOOL_STATUS_MAP)
+import Cowork.cowork_tool_fileops as fileops
+LOCAL_TOOLS.extend(fileops.FILEOPS_TOOLS)   # Merge fileops tools
+TOOL_STATUS_MAP.update(fileops.FILEOPS_TOOL_STATUS_MAP) # Merge status messages
 
 
 def get_friendly_tool_message(tool_call: dict) -> str:

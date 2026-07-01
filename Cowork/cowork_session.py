@@ -56,16 +56,19 @@ from agent import maybe_summarize
 log = structlog.get_logger()
 
 BANNER = """
-╔═════════ Sicily Cowork v2.4.6 ════════════╦══════════════ Capabilities ════════════════╗
-║                                           ║                                            ║
-║                                           ║  - Read & Parse Text, PDF, Word, Excel.    ║
-║  Files are sandboxed to this directory.   ║  - Inspect File Trees & Metadata           ║
-║      Type  exit/quit  to leave.           ║  - Create Text Files & Directories         ║
-║                                           ║  - Strictly Safe: No Overwrites            ║
-║                                           ║                                            ║
-╚═══════════════════════════════════════════╩════════════════════════════════════════════╝
+╔═════════ Sicily Cowork v2.4.6 ════════════╦════════════════ What Sicily Can Do ════════════════╗
+║                                           ║                                                    ║
+║                                           ║    Sicily can search, inspect, read, organize,     ║
+║  Files are sandboxed to this directory.   ║    and safely modify the contents of your          ║
+║      Type  exit/quit  to leave.           ║    workspace, including text, code, PDF, Word,     ║
+║                                           ║    and Excel documents. Semantic search, file      ║
+║                                           ║    discovery, previews, and protected editing      ║
+║                                           ║    are available throughout the session.           ║
+║                                           ║                                                    ║
+╚═══════════════════════════════════════════╩════════════════════════════════════════════════════╝
 """
-LOCAL_TOKEN_THRESHOLD = 5_000
+
+LOCAL_TOKEN_THRESHOLD = 7_000
 
 summarizer_llm = configuration.get_summarizer_llm()
 
@@ -97,25 +100,23 @@ def build_local_graph():
             ---
             # Filesystem Access
 
-            You have sandboxed access to the user's local directory. All paths must be RELATIVE — \
-            never use absolute paths.
+            You have sandboxed access to the user's local workspace. All paths must be relative—never use absolute paths.
 
             ## Reading files
-            - Before reading any file in full, use `head=50` first to understand its structure \
-            and purpose. Only read the complete file when the question genuinely requires it \
-            (e.g. "summarise everything", "find all occurrences of X").
-            - For questions about what a file does, its structure, or its purpose — the first \
-            50 lines are almost always sufficient.
-            - Chain reads as needed. Never guess when you can verify.
+            - Explore the workspace before making assumptions.
+            - For unknown or potentially large files, inspect only the beginning first before reading the entire file.
+            - Prefer targeted reads over loading large files into context.
+            - Chain tool calls as needed to gather evidence.
 
             ## Writing files
-            - You may CREATE new files (`create_text_file`) and new directories (`make_directory`).
-            - You CANNOT overwrite, edit, or delete anything that already exists.
-            - Always confirm with the user before creating files unless explicitly asked to do so.
+            - Any operation that changes the filesystem requires the user's approval unless they have already explicitly requested that exact change. 
+            - For potentially destructive actions (editing, moving, renaming, deleting, or replacing files), always present the preview first when available and wait for confirmation before applying the change. 
+            - Respect the sandbox's safety guarantees. Never attempt to bypass them.
 
             ## General rules
-            - Never fabricate file contents. If you haven't read it, say so.
-            - If a tool call fails, report the error exactly — do not paper over it.
+            - Never fabricate file contents or claim to have inspected something you haven't. 
+            - If a tool reports an error, relay it honestly instead of guessing. 
+            - Prefer the least invasive tool that can answer the user's question.
             """
 
         trimmed_messages = await maybe_summarize(
@@ -163,11 +164,58 @@ async def run_local_session():
 
     # initialise RAG index
     from Cowork.cowork_rag import SicilyRAG, set_rag
+    from rich.progress import Progress, SpinnerColumn, BarColumn, MofNCompleteColumn, TextColumn
 
-    rag = SicilyRAG(cwd)
-    with console.status("[grey50]Indexing files...[/grey50]", spinner="dots", spinner_style="dim"):
-        loop    = asyncio.get_event_loop()
-        summary = await loop.run_in_executor(None, rag.index_session)
+    # 1. Show something immediately, and find out up front whether there's
+    #    actually anything to index — this decides which UI we show below.
+    with console.status("[grey50]Preparing index...[/grey50]", spinner="dots", spinner_style="dim"):
+        rag = SicilyRAG(cwd)
+        pending = rag.count_pending()
+
+    loop = asyncio.get_event_loop()
+
+    if pending == 0:
+        # Nothing new or changed. index_session() still has to run — it
+        # handles deleted-file cleanup and TF-IDF resync — but none of
+        # that is worth a progress bar, so keep it to one quiet spinner.
+        with console.status("[grey50]Checking index...[/grey50]", spinner="dots", spinner_style="dim"):
+            summary = await loop.run_in_executor(None, rag.index_session)
+    else:
+        # 2. Real work ahead — determinate bar + single updating
+        #    "current file" line. Per-file logging in index_session is
+        #    debug-level (see cowork_rag.py) so nothing else writes to
+        #    stdout while this Live render is up.
+        progress = Progress(
+            SpinnerColumn(style="grey50"),
+            TextColumn("[grey50]Indexing files[/grey50]"),
+            BarColumn(
+                style="grey50",
+                complete_style="white",
+                finished_style="white",
+                pulse_style="white",
+            ),
+            MofNCompleteColumn(),
+            TextColumn("[dim]{task.fields[current_file]}[/dim]"),
+            console=console,
+            transient=True,  # bar clears once done; only the summary line remains
+        )
+
+        def _on_index_progress(file_path: Path, current: int, total: int) -> None:
+            # Called from the executor thread index_session() runs on.
+            # Progress.update() is internally lock-guarded, so this
+            # single-writer pattern is safe.
+            try:
+                rel = file_path.relative_to(cwd)
+            except ValueError:
+                rel = file_path
+            progress.update(task_id, completed=current, total=total, current_file=str(rel))
+
+        with progress:
+            task_id = progress.add_task("indexing", total=pending, current_file="")
+            summary = await loop.run_in_executor(
+                None, lambda: rag.index_session(progress_callback=_on_index_progress)
+            )
+
     set_rag(rag)
 
     print_info(
