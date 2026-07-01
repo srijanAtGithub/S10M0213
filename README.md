@@ -121,6 +121,14 @@ It walks backward through the message history to find a safe cut point — speci
 
 ---
 
+### Sicily via Telegram
+
+The Telegram interface where the agent lives day-to-day — chat naturally, and Sicily handles context, tools, and approvals behind the scenes.
+
+<img src="Images/telegram_interface.png" alt="Sicily via Telegram" width="85%">
+
+---
+
 ### Cowork — Local File Intelligence from the Terminal
 
 `sicily start` launches Sicily as a local terminal assistant, sandboxed to whichever directory you run it from. No Telegram, no server, no scheduled tasks — just you and your files.
@@ -137,13 +145,14 @@ Sicily indexes your files at startup using a **hybrid RAG pipeline** (TF-IDF key
 - Search across all your files by meaning, not just filenames
 - Create new text files and directories
 - Edit existing files line-by-line (with a dry-run preview before any change is applied)
+- Copy, move, rename, and delete files (deletes go to a sandbox-local trash folder, never removed outright)
 - Pin frequently referenced paths so they survive context summarisation
 
 **What it will never do:**
 
-- Overwrite or delete existing files
+- Permanently delete a file without first moving it to trash
 - Access paths outside the directory you started it in
-- Apply edits without showing you a preview first
+- Apply edits or destructive actions without showing you a preview first
 
 The sandbox is enforced at the path level — every tool call resolves its target path against the root and rejects anything that would escape it, including symlink traversals.
 
@@ -205,8 +214,6 @@ sicily run
 ```
 
 Starts the full agent: FastAPI backend, Telegram listener, session manager, and recurring task scheduler. Connect your Telegram bot and start chatting.
-
-<img src="Images/telegram_interface.png" alt="Sicily via Telegram" width="85%">
 
 #### As a Local Terminal Assistant (Cowork)
 
