@@ -44,7 +44,7 @@ import os
 import pickle
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 import structlog
 from langchain_chroma import Chroma
@@ -65,29 +65,42 @@ TFIDF_CANDIDATES  = 50    # how many TF-IDF hits to feed into RRF
 SEMANTIC_CANDIDATES = 50  # how many ChromaDB hits to feed into RRF
 RRF_K             = 60    # RRF constant (standard value, do not change lightly)
 
-# All file types that can be meaningfully indexed as text
+# Chroma's `where` clause supports exact-match / $in, but not string
+# prefix matching — there's no native "give me everything under this
+# folder" filter. So sandbox-scoped queries are done via `$in` against
+# the exact file list, sent in batches of this size, rather than either
+# (a) one unbounded global fetch, or (b) one single $in list that could
+# grow into the thousands for a large sandbox.
+CHROMA_QUERY_BATCH_SIZE = 200
+
+# File types that get RAG-indexed (embedded + TF-IDF'd).
+#
+# Sicily Cowork's RAG layer is scoped to general / non-coding files only.
+# Source code, markup, and project-config extensions are deliberately
+# excluded here to avoid silently embedding entire codebases (cost +
+# noise) when `sicily start` happens to be run inside a coding project.
+# Code files are still fully readable/writable via the direct file tools
+# (read_file, read_file_lines, create_text_file, ...) in cowork_tools.py —
+# they are just never pushed into the vector/keyword index.
+#
+# A dedicated coding-project variant of Sicily Cowork (closer to a
+# `claude cowork`-style tool) is planned separately to handle that case
+# with its own indexing strategy.
 INDEXABLE_EXTENSIONS: frozenset[str] = frozenset({
     # Plain documents / notes
     ".txt", ".md", ".markdown", ".rst", ".org", ".tex",
-    # Config / data interchange
-    ".json", ".jsonl", ".ndjson",
-    ".yaml", ".yml", ".toml",
-    ".ini", ".cfg", ".conf", ".env",
-    # Web / markup
-    ".html", ".htm", ".xml", ".css", ".scss",
-    # Source code (treated as plain text — no special parsing)
-    ".py", ".pyi",
-    ".js", ".mjs", ".ts", ".tsx", ".jsx",
-    ".sh", ".bash", ".zsh",
-    ".rb", ".go", ".rs",
-    ".java", ".kt", ".scala",
-    ".c", ".cpp", ".h", ".hpp",
-    ".cs", ".php", ".lua", ".r", ".sql",
-    # Data / logs
+    # General data / logs (not project source)
     ".csv", ".tsv", ".log",
     # Binary formats with text extractors
     ".pdf", ".docx", ".doc", ".xlsx", ".xls",
 })
+
+# Explicitly NOT indexed (kept here as documentation, not used directly):
+#   Config / data interchange : .json .jsonl .ndjson .yaml .yml .toml .ini .cfg .conf .env
+#   Web / markup               : .html .htm .xml .css .scss
+#   Source code                : .py .pyi .js .mjs .ts .tsx .jsx .sh .bash .zsh
+#                                 .rb .go .rs .java .kt .scala .c .cpp .h .hpp
+#                                 .cs .php .lua .r .sql
 
 # Directories to skip when walking the sandbox
 SKIP_DIRS: set[str] = {
@@ -96,6 +109,7 @@ SKIP_DIRS: set[str] = {
     ".mypy_cache", ".pytest_cache", ".ruff_cache",
     "dist", "build", ".eggs",
     ".tox", ".nox", ".idea", ".vscode",
+    ".sicily-trash",
 }
 
 
@@ -213,6 +227,14 @@ class SicilyRAG:
             add_start_index=True,   # stored in metadata as "start_index"
         )
 
+        # Exact set of absolute paths that belong to THIS sandbox session.
+        # Populated by index_session(). Used as the single source of truth
+        # for scoping both TF-IDF and semantic search to the current sandbox —
+        # set-membership, not string prefix matching (a prefix check like
+        # `abs_path.startswith(sandbox_root)` is unsafe: "/proj" would wrongly
+        # match a sibling directory "/proj2").
+        self._sandbox_abs_paths: set[str] = set()
+
         # TF-IDF state
         self._tfidf_vectorizer: Optional[TfidfVectorizer] = None
         self._tfidf_matrix   = None
@@ -270,26 +292,78 @@ class SicilyRAG:
             return False
 
 
+    def _fetch_chunks_for_paths(self, paths: list[str]) -> tuple[list[str], list[str], list[dict]]:
+        """
+        Fetch chunks from ChromaDB whose abs_path is in `paths`, querying
+        in batches of CHROMA_QUERY_BATCH_SIZE instead of either (a) one
+        unfiltered global .get() across every sandbox ever indexed, or
+        (b) one single $in list that grows unbounded with sandbox size.
+
+        Each batch query is filtered server-side via Chroma's `where`
+        clause — this is the actual cost fix. A Python-side `if` check
+        after a global fetch doesn't reduce the database round-trip;
+        only filtering inside the query itself does that.
+
+        Returns (ids, documents, metadatas), all three lists aligned
+        by index, same shape as ChromaDB's raw .get() result.
+        """
+        ids, docs, metadatas = [], [], []
+        if not paths:
+            return ids, docs, metadatas
+
+        for i in range(0, len(paths), CHROMA_QUERY_BATCH_SIZE):
+            batch = paths[i : i + CHROMA_QUERY_BATCH_SIZE]
+            result = self._vectorstore.get(
+                where={"abs_path": {"$in": batch}},
+                include=["documents", "metadatas"],
+            )
+            ids.extend(result.get("ids") or [])
+            docs.extend(result.get("documents") or [])
+            metadatas.extend(result.get("metadatas") or [])
+
+        return ids, docs, metadatas
+
+
     def _rebuild_tfidf(self) -> None:
         """
-        Rebuild the TF-IDF index from scratch using whatever is
-        currently stored in ChromaDB.  Called after any indexing change.
-        Fitted on the global corpus (all sessions) for better calibration.
+        Rebuild the TF-IDF index from scratch, scoped to the CURRENT
+        sandbox only — not the global cross-session corpus.
+
+        ChromaDB itself stores chunks from every sandbox Sicily has ever
+        indexed (that's intentional, for cross-session reuse — see module
+        docstring). Fitting TF-IDF over that entire history would be
+        wrong on two counts: it gets slower with every unrelated project
+        you've ever opened, and term statistics from unrelated projects
+        pollute relevance scoring for the project you're actually in.
+
+        Chroma's `where` clause only supports exact-match / $in, not a
+        native "starts with this folder" filter — so there's no single
+        query that says "everything under /abc/xyz". Instead, the exact
+        (already directory-walk-correct) file list in
+        self._sandbox_abs_paths is sent to Chroma via _fetch_chunks_for_paths,
+        which batches the $in filter so the query stays server-side-filtered
+        and bounded, never an unfiltered global pull. This must run AFTER
+        self._sandbox_abs_paths has been populated by index_session().
+
+        Called unconditionally at the end of index_session() — see
+        comment there for why "unconditional" is correct here (it's
+        local/sklearn fitting, no embedding API cost, and now bounded
+        by sandbox size rather than global corpus size).
         """
-        result = self._vectorstore.get(include=["documents", "metadatas"])
-        docs      = result.get("documents") or []
-        ids       = result.get("ids") or []
-        metadatas = result.get("metadatas") or []
+        ids, docs, metadatas = self._fetch_chunks_for_paths(
+            list(self._sandbox_abs_paths)
+        )
 
         if not docs:
-            # Nothing indexed yet — clear TF-IDF state
+            # Nothing indexed for this sandbox — clear TF-IDF state
             self._tfidf_vectorizer    = None
             self._tfidf_matrix        = None
             self._tfidf_ids           = []
             self._tfidf_id_to_abspath = {}
             return
 
-        # Build ID → abs_path mapping so _tfidf_search can filter by sandbox
+        # Build ID → abs_path mapping (sandbox-scoped already, but kept
+        # as a fast lookup for _tfidf_search's defensive filter)
         id_to_abspath = {
             cid: m.get("abs_path", "")
             for cid, m in zip(ids, metadatas)
@@ -462,10 +536,34 @@ class SicilyRAG:
         return len(stale)
 
 
-    def index_session(self) -> dict:
+    def count_pending(self) -> int:
+        """
+        Cheap upfront check: how many files WOULD be (re)indexed if
+        index_session() ran right now — without doing any extraction or
+        embedding work. Just a directory walk + mtime comparison against
+        the registry.
+
+        Used by callers to decide, before rendering anything, whether to
+        show a progress bar (real work ahead) or a lightweight "up to
+        date" message (nothing but cleanup/TF-IDF resync to do).
+        """
+        all_files = self._walk_sandbox()
+        return sum(1 for fp in all_files if self._should_reindex(fp))
+
+
+    def index_session(self, progress_callback: Optional[Callable[[Path, int, int], None]] = None,) -> dict:
         """
         Run at Sicily startup.  Walks the sandbox and brings the index
         in sync with the current state of the filesystem.
+
+        Parameters
+        ----------
+        progress_callback   Optional. Called as
+                            progress_callback(file_path, current_index, total_to_index)
+                            right before each file that needs (re)indexing is
+                            processed. total_to_index is fixed upfront, so
+                            callers can render a real (determinate) progress
+                            bar instead of an indefinite spinner.
 
         Returns
         -------
@@ -473,7 +571,11 @@ class SicilyRAG:
         """
         all_files   = self._walk_sandbox()
         current_abs = {str(f) for f in all_files}
-        sandbox_str = str(self.sandbox_root)
+
+        # Populate the single source of truth for "what belongs to this
+        # sandbox" BEFORE any indexing/filtering logic runs below — both
+        # _rebuild_tfidf() and search()'s semantic stage depend on this.
+        self._sandbox_abs_paths = current_abs
 
         # Step 1 — global cleanup: files deleted from disk anywhere
         self._clean_stale_entries()
@@ -482,41 +584,37 @@ class SicilyRAG:
         # but have since been moved or removed (still exist on disk elsewhere)
         deleted_paths = [
             p for p in list(self._registry)
-            if p.startswith(sandbox_str) and p not in current_abs
+            if Path(p).is_relative_to(self.sandbox_root) and p not in current_abs
         ]
         for abs_path in deleted_paths:
             self._delete_file_chunks(abs_path)
             del self._registry[abs_path]
 
-        # Step 3 — index new / modified files
-        indexed = skipped = failed = 0
+        # Step 3 — index new / modified files.
+        # Figure out the exact worklist UP FRONT so we have a real total
+        # for a progress bar, instead of discovering the count as we go.
+        to_index = [fp for fp in all_files if self._should_reindex(fp)]
+        total_to_index = len(to_index)
+        skipped = len(all_files) - total_to_index
+        indexed = failed = 0
 
-        for fp in all_files:
-            if not self._should_reindex(fp):
-                skipped += 1
-                continue
+        for i, fp in enumerate(to_index, start=1):
+            if progress_callback is not None:
+                progress_callback(fp, i, total_to_index)
             try:
                 n = self._index_file(fp)
                 if n > 0:
                     indexed += 1
-                    log.info(
-                        "rag.indexed",
-                        path=str(fp),
-                        chunks=n,
-                    )
+                    # debug, not info — with a progress bar (Rich Live)
+                    # rendering, a stray per-file stdout write corrupts the
+                    # display. One summary line at the end is enough.
+                    # log.debug("rag.indexed", path=str(fp), chunks=n)
             except Exception as exc:
                 failed += 1
                 log.warning("rag.index_failed", path=str(fp), error=str(exc))
 
         self._save_registry()
-
-        # Sync TF-IDF
-        if indexed > 0 or deleted_paths:
-            # Something changed — rebuild from scratch for consistency
-            self._rebuild_tfidf()
-        else:
-            # Nothing changed — load from disk (fast)
-            self._load_tfidf()
+        self._rebuild_tfidf()
 
         return {
             "total_files": len(all_files),
@@ -530,14 +628,18 @@ class SicilyRAG:
     # Search
     def _tfidf_search(self, query: str, k: int) -> list[tuple[str, float]]:
         """
-        Keyword search. Pre-filters to chunks under the current sandbox
-        using the id → abs_path mapping built at TF-IDF rebuild time.
+        Keyword search. The TF-IDF matrix is already scoped to the current
+        sandbox (see _rebuild_tfidf), so this filter is a defensive
+        no-op in the normal case — kept as a second line of defense in
+        case the matrix is ever stale. Uses exact set membership against
+        self._sandbox_abs_paths, NOT string prefix matching: a prefix
+        check like abs_path.startswith(sandbox_root) would incorrectly
+        match a sibling directory (e.g. "/proj" matching "/proj2/...").
         Returns [(chunk_id, score), ...].
         """
         if self._tfidf_vectorizer is None or self._tfidf_matrix is None:
             return []
         try:
-            sandbox_str = str(self.sandbox_root)
             q_vec  = self._tfidf_vectorizer.transform([query])
             scores = cosine_similarity(q_vec, self._tfidf_matrix).flatten()
 
@@ -546,7 +648,7 @@ class SicilyRAG:
                 (self._tfidf_ids[i], float(scores[i]))
                 for i in range(len(self._tfidf_ids))
                 if scores[i] > 0.0
-                and self._tfidf_id_to_abspath.get(self._tfidf_ids[i], "").startswith(sandbox_str)
+                and self._tfidf_id_to_abspath.get(self._tfidf_ids[i], "") in self._sandbox_abs_paths
             ]
             results.sort(key=lambda x: x[1], reverse=True)
             return results[:k]
@@ -558,32 +660,67 @@ class SicilyRAG:
 
     def _semantic_search(self, query: str, k: int) -> list[tuple[str, float]]:
         """
-        Semantic search via ChromaDB, filtered to the current sandbox.
-        Fetches extra candidates (4x) to compensate for cross-sandbox
-        filtering, since ChromaDB doesn't support path-prefix filtering natively.
+        Semantic search via ChromaDB, constrained to the current sandbox.
+
+        Previously this fetched k*4 candidates from the GLOBAL collection
+        and filtered down to the sandbox afterward with a Python loop —
+        which meant a small/sparse sandbox could legitimately get back
+        fewer than k results even when k relevant chunks existed, because
+        the top global-ranked hits were dominated by other, unrelated
+        sandboxes. That's the wrong order of operations.
+
+        This version filters server-side via Chroma's `where` clause
+        (`abs_path $in [...]`), so the similarity search itself only
+        ever considers chunks belonging to this sandbox — filter first,
+        then rank — rather than rank globally and filter after the fact.
+
+        For large sandboxes, the file list is split into batches of
+        CHROMA_QUERY_BATCH_SIZE (same reasoning as _fetch_chunks_for_paths:
+        Chroma has no native path-prefix filter, only exact-match/$in, so
+        a single sandbox-wide $in list could otherwise grow unbounded).
+        Each batch returns its own top-k; results are merged and re-sorted
+        by score afterward, since "top k overall" isn't the same as
+        "top k from batch 1" when a sandbox spans multiple batches.
+
         Returns [(chunk_id, relevance_score), ...].
         Relevance score is normalised to [0, 1] by LangChain.
         """
+        if not self._sandbox_abs_paths:
+            return []
+
+        paths = list(self._sandbox_abs_paths)
+        all_hits: list[tuple] = []  # [(doc, score), ...] across all batches
+
         try:
-            sandbox_str = str(self.sandbox_root)
-            # Fetch extra to account for filtering out other-session chunks
-            hits = self._vectorstore.similarity_search_with_relevance_scores(
-                query, k=k * 4
-            )
-            results = []
-            for doc, score in hits:
-                meta     = doc.metadata
-                abs_path = meta.get("abs_path", "")
-                if not abs_path.startswith(sandbox_str):
-                    continue  # skip files from other sandbox sessions
-                chunk_id = self._chunk_id(abs_path, meta["chunk_index"])
-                results.append((chunk_id, float(score)))
-                if len(results) >= k:
-                    break
-            return results
+            for i in range(0, len(paths), CHROMA_QUERY_BATCH_SIZE):
+                batch = paths[i : i + CHROMA_QUERY_BATCH_SIZE]
+                hits = self._vectorstore.similarity_search_with_relevance_scores(
+                    query,
+                    k=k,
+                    filter={"abs_path": {"$in": batch}},
+                )
+                all_hits.extend(hits)
         except Exception as exc:
             log.warning("rag.semantic_search_failed", error=str(exc))
             return []
+
+        # Merge across batches: highest relevance score first, then take
+        # the overall top k (a single batch's top-k isn't necessarily the
+        # sandbox's top-k once there's more than one batch).
+        all_hits.sort(key=lambda pair: pair[1], reverse=True)
+
+        results = []
+        for doc, score in all_hits[:k]:
+            meta     = doc.metadata
+            abs_path = meta.get("abs_path", "")
+            # Defensive second check — should always pass given the
+            # `where` filter above, kept in case of Chroma version
+            # quirks around filter semantics.
+            if abs_path not in self._sandbox_abs_paths:
+                continue
+            chunk_id = self._chunk_id(abs_path, meta["chunk_index"])
+            results.append((chunk_id, float(score)))
+        return results
 
 
     @staticmethod
