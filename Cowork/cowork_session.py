@@ -41,6 +41,7 @@ import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import ToolNode
+from langgraph.errors import GraphRecursionError
 
 from rich.console import Console
 from rich.panel import Panel
@@ -56,7 +57,7 @@ from agent import maybe_summarize
 log = structlog.get_logger()
 
 BANNER = """
-╔═════════ Sicily Cowork v2.5.8 ════════════╦════════════════ What Sicily Can Do ════════════════╗
+╔═════════ Sicily Cowork v2.5.9 ════════════╦════════════════ What Sicily Can Do ════════════════╗
 ║                                           ║                                                    ║
 ║                                           ║    Sicily can search, inspect, read, organize,     ║
 ║  Files are sandboxed to this directory.   ║    and safely modify the contents of your          ║
@@ -119,15 +120,16 @@ def build_local_graph():
             - Prefer the least invasive tool that can answer the user's question.
             """
 
-        trimmed_messages = await maybe_summarize(
-            state["messages"], 
-            summarizer_llm, 
-            token_threshold=LOCAL_TOKEN_THRESHOLD, 
-            show_log=False
-        )
+        # NOTE: summarization is intentionally NOT done here. This node
+        # re-runs on every main -> tools -> main cycle within a single
+        # user turn, so summarizing here would risk collapsing a
+        # ToolMessage away from the AIMessage.tool_calls that produced
+        # it — losing the exact evidence the model just gathered mid
+        # investigation. Summarization instead happens once, in
+        # run_local_session, right when a fresh user message arrives.
         response = await main_llm.ainvoke([
             SystemMessage(content=system_message + sandbox_notice),
-            *trimmed_messages,
+            *state["messages"],
         ])
         return {"messages": [response]}
 
@@ -252,6 +254,25 @@ async def run_local_session():
 
         messages.append(HumanMessage(content=user_input))
 
+        # Summarize exactly once per user turn, here — this is the only
+        # place a genuinely new user query enters the conversation. Any
+        # tool-call chain the model runs *within* this turn is left
+        # untouched (see main_node) so evidence it just gathered isn't
+        # collapsed away mid-investigation.
+        messages = await maybe_summarize(
+            messages,
+            summarizer_llm,
+            token_threshold=LOCAL_TOKEN_THRESHOLD,
+            show_log=False,
+        )
+
+        # Per-turn call config. recursion_limit counts graph super-steps
+        # (main -> tools -> main = 2 steps per tool call), so this budget
+        # is set generously in terms of *tool calls*, not raw steps.
+        MAX_TOOL_CALLS_PER_TURN = 60
+        turn_config = {**config, "recursion_limit": MAX_TOOL_CALLS_PER_TURN * 2 + 5}
+        tool_call_count = 0
+
         try:
             # 1. Start the rich status spinner
             with console.status("[grey50]Thinking...[/grey50]", spinner="dots", spinner_style="dim") as status:
@@ -259,7 +280,7 @@ async def run_local_session():
                 root_run_id = None
                 
                 # 2. Stream events to catch on_tool_start
-                async for event in graph.astream_events({"messages": messages}, config, version="v2"):
+                async for event in graph.astream_events({"messages": messages}, turn_config, version="v2"):
                     
                     # Track the root graph run to capture the final output later
                     if root_run_id is None:
@@ -267,6 +288,7 @@ async def run_local_session():
 
                     # 3. Intercept tool execution 
                     if event["event"] == "on_tool_start":
+                        tool_call_count += 1
                         tool_name = event.get("name")
                         tool_args = event.get("data", {}).get("input", {})
                         
@@ -274,8 +296,14 @@ async def run_local_session():
                         tool_call = {"name": tool_name, "args": tool_args}
                         msg = get_friendly_tool_message(tool_call)
                         
-                        # Update the terminal spinner with the new message
-                        status.update(f"[grey50]{msg}...[/grey50]")
+                        # Update the terminal spinner with the new message,
+                        # and surface progress once things start running long.
+                        if tool_call_count > MAX_TOOL_CALLS_PER_TURN * 0.7:
+                            status.update(
+                                f"[grey50]{msg}... (tool call {tool_call_count}/{MAX_TOOL_CALLS_PER_TURN})[/grey50]"
+                            )
+                        else:
+                            status.update(f"[grey50]{msg}...[/grey50]")
 
                     elif event["event"] == "on_tool_error":
                         tool_name = event.get("name", "tool")
@@ -299,6 +327,38 @@ async def run_local_session():
                 print_ai(reply)
             else:
                 print_ai("(No response)")
+
+        except GraphRecursionError:
+            log.warning("Recursion limit hit", tool_calls=tool_call_count)
+            # Don't just error out — ask the model to summarize whatever it
+            # already found, using the same message history (tool results
+            # included), but this time forbid further tool calls.
+            messages.append(
+                HumanMessage(
+                    content=(
+                        "You've made a lot of tool calls on this. Please stop "
+                        "investigating now and give your best answer based on "
+                        "everything you've found so far. If something is still "
+                        "unclear, say what's missing and suggest a next step "
+                        "instead of guessing."
+                    )
+                )
+            )
+            try:
+                no_tools_llm = configuration.get_main_llm(tools=[])
+                trimmed = await maybe_summarize(
+                    messages, summarizer_llm, token_threshold=LOCAL_TOKEN_THRESHOLD, show_log=False
+                )
+                final = await no_tools_llm.ainvoke(trimmed)
+                messages.append(final)
+                print_ai(final.content or "(No response)")
+            except Exception:
+                log.exception("Recursion-limit fallback also failed")
+                print_ai(
+                    "I ran out of tool-call budget digging into this and couldn't "
+                    "wrap up cleanly. Try breaking your question into smaller "
+                    "steps, or ask me to continue from where I left off."
+                )
 
         except Exception as e:
             log.exception("Local session error")

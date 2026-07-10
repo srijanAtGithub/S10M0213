@@ -21,11 +21,6 @@ Path pins        — memory:   pin_path, recall_path, recall_all_pins
                   not in the message list.
 """
 
-from anthropic.types import beta_invalid_request_error
-from anthropic.types import beta_invalid_request_error
-from anthropic.types import beta_invalid_request_error
-from anthropic.types import beta_invalid_request_error
-from anthropic.types import beta_invalid_request_error
 import datetime
 import stat
 from pathlib import Path
