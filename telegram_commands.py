@@ -68,6 +68,50 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No active session.")
 
 
+async def usage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from usage_tracker import get_usage_report, init_db, cleanup_old_records
+    init_db()
+    cleanup_old_records()
+
+    timeframe = "week"
+    title_suffix = "Last 7 Days"
+
+    if context.args:
+        arg = context.args[0].lower()
+        if arg == "session":
+            timeframe = "session"
+            title_suffix = "Last Session"
+        elif arg == "day":
+            timeframe = "day"
+            title_suffix = "Last 24 Hours"
+
+    report = get_usage_report(timeframe=timeframe)
+    if not report:
+        await update.message.reply_text(f" No usage metrics discovered for: {title_suffix}")
+        return
+
+    text_lines = [f" *Sicily Usage Report ({title_suffix})*", ""]
+    total_cost = 0.0
+
+    for row in report:
+        dim = row["dimension"].upper()
+        model = row["model_name"]
+        in_t = row["in_tokens"]
+        out_t = row["out_tokens"]
+        cost = row["total_cost"]
+        total_cost += cost
+        
+        text_lines.append(
+            f"▪️ *{dim}* — `{model}`\n"
+            f"  Input: {in_t:,}\n"
+            f"  Output: {out_t:,}\n"
+            f"  Cost: ${cost:.5f}\n"
+        )
+    
+    text_lines.append(f" *Total Estimated Cost: ${total_cost:.5f} USD*")
+    await update.message.reply_text("\n".join(text_lines), parse_mode="Markdown")
+
+
 # DYNAMIC CONNECTOR COMMANDS
 #
 # Instead of one CommandHandler per connector (which forces every
@@ -163,20 +207,22 @@ def setup_command_handlers(telegram_app):
     telegram_app.add_handler(CommandHandler("start", start_command))
     telegram_app.add_handler(CommandHandler("stop", stop_command))
     telegram_app.add_handler(CommandHandler("status", status_command))
+    telegram_app.add_handler(CommandHandler("usage", usage_command))
     telegram_app.add_handler(CommandHandler("connectors", connectors_command))
     telegram_app.add_handler(CommandHandler("loaded_connectors", loaded_connectors_command))
 
     # Catch-all for /connect_* and /disconnect_* — must be added last so the
-    # 5 static commands above get first refusal within the handler group.
+    # static commands above get first refusal within the handler group.
     telegram_app.add_handler(MessageHandler(filters.COMMAND, connector_command_dispatch))
 
 
 async def setup_bot_commands(telegram_app):
-    """Sets the UI menu commands in Telegram — kept to the fixed 5."""
+    """Sets the UI menu commands in Telegram."""
     await telegram_app.bot.set_my_commands([
         BotCommand("start",             "Start the bot"),
         BotCommand("stop",              "Stop the current process"),
         BotCommand("status",            "Show your session info"),
+        BotCommand("usage",             "Show token metrics and historical costs"),
         BotCommand("connectors",        "Show available connectors to connect"),
         BotCommand("loaded_connectors", "Show connected connectors (and disconnect them)"),
     ])
