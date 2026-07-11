@@ -57,7 +57,7 @@ from agent import maybe_summarize
 log = structlog.get_logger()
 
 BANNER = """
-╔═════════ Sicily Cowork v2.5.9 ════════════╦════════════════ What Sicily Can Do ════════════════╗
+╔═════════ Sicily Cowork v2.5.10 ═══════════╦════════════════ What Sicily Can Do ════════════════╗
 ║                                           ║                                                    ║
 ║                                           ║    Sicily can search, inspect, read, organize,     ║
 ║  Files are sandboxed to this directory.   ║    and safely modify the contents of your          ║
@@ -285,6 +285,23 @@ async def run_local_session():
                     # Track the root graph run to capture the final output later
                     if root_run_id is None:
                         root_run_id = event.get("run_id")
+
+                    # Track token usage from chat models securely in the background
+                    if event["event"] == "on_chat_model_end":
+                        output = event.get("data", {}).get("output")
+                        if output and hasattr(output, "usage_metadata") and output.usage_metadata:
+                            from usage_tracker import record_usage
+                            usage = output.usage_metadata
+                            # Try getting specific model from metadata, fallback to event name
+                            model_name = output.response_metadata.get("model_name", event.get("name", "unknown"))
+                            
+                            record_usage(
+                                dimension="cowork",
+                                session_id=thread_id,
+                                model_name=model_name,
+                                input_tokens=usage.get("input_tokens", 0),
+                                output_tokens=usage.get("output_tokens", 0)
+                            )
 
                     # 3. Intercept tool execution 
                     if event["event"] == "on_tool_start":

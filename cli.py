@@ -324,6 +324,59 @@ def uninstall():
                 click.echo(f"  pip error: {result.stderr.strip()}")
 
 
+@main_cli.command(name="usage")
+@click.option("--session", is_flag=True, help="Show usage for the last recorded session.")
+@click.option("--day", is_flag=True, help="Show usage for the last 24 hours.")
+@click.option("--week", is_flag=True, help="Show usage for the last 7 days (default).")
+def usage(session, day, week):
+    """Show token usage and estimated cost."""
+    from usage_tracker import get_usage_report, init_db, cleanup_old_records
+    from rich.console import Console
+    from rich.table import Table
+
+    init_db()
+    cleanup_old_records()
+
+    if session:
+        timeframe = "session"
+        title_suffix = "Last Session"
+    elif day:
+        timeframe = "day"
+        title_suffix = "Last 24 Hours"
+    else:
+        timeframe = "week"
+        title_suffix = "Last 7 Days"
+
+    report = get_usage_report(timeframe=timeframe)
+    console = Console()
+    
+    if not report:
+        console.print(f"\n[yellow]No usage data found for: {title_suffix}[/yellow]\n")
+        return
+
+    table = Table(title=f"Sicily Usage Report ({title_suffix})")
+    table.add_column("Dimension", style="cyan")
+    table.add_column("Model", style="magenta")
+    table.add_column("Input Tokens", justify="right", style="green")
+    table.add_column("Output Tokens", justify="right", style="green")
+    table.add_column("Est. Cost (USD)", justify="right", style="bold yellow")
+
+    total_cost = 0.0
+    for row in report:
+        table.add_row(
+            row["dimension"].capitalize(),
+            row["model_name"],
+            f"{row['in_tokens']:,}",
+            f"{row['out_tokens']:,}",
+            f"${row['total_cost']:.5f}"
+        )
+        total_cost += row['total_cost']
+
+    console.print()
+    console.print(table)
+    console.print(f"[bold right]Total Estimated Cost: ${total_cost:.5f}[/bold right]\n")
+
+
 @main_cli.command()
 def help():
     """Show help."""
@@ -333,6 +386,7 @@ def help():
     click.echo("  config        - Open the config folder")
     click.echo("  run           - Run the agent")
     click.echo("  start         - Start a local terminal session")
+    click.echo("  usage         - Show token usage and estimated cost")
     click.echo("  update        - Update Sicily to the latest version")
     click.echo("  reset         - Reset all config and indexes back to default")
     click.echo("  uninstall     - Remove all local files and uninstall sicily")

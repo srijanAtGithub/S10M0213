@@ -308,6 +308,29 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         result = await task
 
+        # Track token usage from the session state safely post-execution
+        if not session.cancel_requested:
+            try:
+                current_graph = agent_module.graph
+                if current_graph:
+                    state = await current_graph.aget_state({"configurable": {"thread_id": session_id}})
+                    for msg in state.values.get("messages", []):
+                        if hasattr(msg, "usage_metadata") and msg.usage_metadata:
+                            model_name = msg.response_metadata.get("model_name", "gpt-5.4-mini")
+                            msg_id = getattr(msg, "id", None)
+                            
+                            from usage_tracker import record_usage
+                            record_usage(
+                                dimension="agent",
+                                session_id=session_id,
+                                model_name=model_name,
+                                input_tokens=msg.usage_metadata.get("input_tokens", 0),
+                                output_tokens=msg.usage_metadata.get("output_tokens", 0),
+                                message_id=msg_id
+                            )
+            except Exception as token_err:
+                log.warning("Failed to collect agent token metrics", error=str(token_err))
+
         # Task completed normally — only reply if not cancelled.
         # (If cancel was requested mid-run, send() returns None result;
         #  we just silently drop it per spec.)
