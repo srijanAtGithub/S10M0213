@@ -320,12 +320,14 @@ async def on_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                             msg_id = getattr(msg, "id", None)
                             
                             from usage_tracker import record_usage
+                            usage_meta = msg.usage_metadata
                             record_usage(
                                 dimension="agent",
                                 session_id=session_id,
                                 model_name=model_name,
-                                input_tokens=msg.usage_metadata.get("input_tokens", 0),
-                                output_tokens=msg.usage_metadata.get("output_tokens", 0),
+                                input_tokens=usage_meta.get("input_tokens", 0),
+                                output_tokens=usage_meta.get("output_tokens", 0),
+                                cached_input_tokens=usage_meta.get("input_token_details", {}).get("cache_read_tokens", 0),
                                 message_id=msg_id
                             )
             except Exception as token_err:
