@@ -43,9 +43,18 @@ SKIP_DIRS = {
 }
 
 
-# Allowed extensions for text-based file reads and writes
+# Allowed extensions for text-based file CONTENT reads/writes only
+# (write_file, edit_file_lines, etc. in THIS file).
 # Binary formats (.docx, .xlsx, .pdf, …) are intentionally excluded from
-# write operations — they require structured serialisation, not raw text I/O.
+# these content write operations — they require structured serialisation,
+# not raw text I/O.
+#
+# NOTE: this restriction is scoped to reading/writing file CONTENT. It does
+# NOT apply to filesystem operations like move/copy/rename/delete, which
+# never touch content — see cowork_tool_fileops.py's READABLE_EXTENSIONS,
+# which deliberately includes .pdf/.docx/.xlsx/.xls/.doc for exactly that
+# reason. Don't infer from this set alone that binary files are unsupported
+# sandbox-wide.
 ALLOWED_WRITE_EXTENSIONS: frozenset[str] = frozenset({
     # Documents & notes
     ".txt", ".md", ".markdown", ".rst", ".org", ".tex",

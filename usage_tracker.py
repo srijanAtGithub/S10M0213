@@ -5,19 +5,39 @@ from pathlib import Path
 SICILY_HOME = Path.home() / ".sicily"
 DB_PATH = SICILY_HOME / "Data" / "usage.db"
 
-# Prices per 1M tokens
+# Prices per 1M tokens (including cached input where available)
 MODEL_PRICING = {
-    "gpt-4o-mini":  {"input": 0.15 / 1_000_000, "output": 0.60 / 1_000_000},
-    "gpt-5.4-mini": {"input": 0.75 / 1_000_000, "output": 4.50 / 1_000_000},
-    "gpt-5.4-nano": {"input": 0.20 / 1_000_000, "output": 1.25 / 1_000_000},
-    "gpt-4o-mini-transcribe": {"input": 1.25 / 1_000_000, "output": 5 / 1_000_000},
+    "gpt-4o-mini": {
+        "input": 0.15 / 1_000_000,
+        "cached_input": 0.075 / 1_000_000,
+        "output": 0.60 / 1_000_000
+    },
+    "gpt-5.4-mini": {
+        "input": 0.75 / 1_000_000,
+        "cached_input": 0.075 / 1_000_000,
+        "output": 4.50 / 1_000_000
+    },
+    "gpt-5.4-nano": {
+        "input": 0.20 / 1_000_000,
+        "cached_input": 0.020 / 1_000_000,
+        "output": 1.25 / 1_000_000
+    },
+    "gpt-4o-mini-transcribe": {
+        "input": 1.25 / 1_000_000,
+        "output": 5 / 1_000_000
+    },
 }
 
 
-def get_cost(model_name: str, input_tokens: int, output_tokens: int) -> float:
-    # Use gpt-4o-mini rates as a fallback if the specific model isn't mapped
-    rates = MODEL_PRICING.get(model_name, MODEL_PRICING["gpt-5.4-mini"])
-    return (input_tokens * rates["input"]) + (output_tokens * rates["output"])
+def get_cost(model_name: str, input_tokens: int, output_tokens: int, cached_input_tokens: int = 0) -> float:
+    """Calculate cost with support for cached input tokens."""
+    rates = MODEL_PRICING.get(model_name, MODEL_PRICING.get("gpt-5.4-mini", {}))
+    
+    input_cost = (input_tokens - cached_input_tokens) * rates.get("input", 0.75 / 1_000_000)
+    cached_cost = cached_input_tokens * rates.get("cached_input", 0.075 / 1_000_000)
+    output_cost = output_tokens * rates.get("output", 4.50 / 1_000_000)
+    
+    return input_cost + cached_cost + output_cost
 
 
 def init_db():
@@ -32,23 +52,29 @@ def init_db():
                 model_name TEXT,
                 input_tokens INTEGER,
                 output_tokens INTEGER,
+                cached_input_tokens INTEGER DEFAULT 0,
                 cost REAL,
                 message_id TEXT UNIQUE
             )
         """)
 
 
-def record_usage(dimension: str, session_id: str, model_name: str, input_tokens: int, output_tokens: int, message_id: str = None):
+def record_usage(dimension: str, session_id: str, model_name: str, 
+                 input_tokens: int, output_tokens: int, 
+                 cached_input_tokens: int = 0, message_id: str = None):
     init_db()
-    cost = get_cost(model_name, input_tokens, output_tokens)
+    cost = get_cost(model_name, input_tokens, output_tokens, cached_input_tokens)
+    
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute(
             """
             INSERT OR IGNORE INTO token_usage 
-            (timestamp, dimension, session_id, model_name, input_tokens, output_tokens, cost, message_id) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (timestamp, dimension, session_id, model_name, 
+             input_tokens, output_tokens, cached_input_tokens, cost, message_id) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (time.time(), dimension, session_id, model_name, input_tokens, output_tokens, cost, message_id)
+            (time.time(), dimension, session_id, model_name,
+             input_tokens, output_tokens, cached_input_tokens, cost, message_id)
         )
 
 
@@ -75,7 +101,10 @@ def get_usage_report(timeframe="week") -> list[dict]:
                 return []
             
             cursor.execute("""
-                SELECT dimension, model_name, SUM(input_tokens) as in_tokens, SUM(output_tokens) as out_tokens, SUM(cost) as total_cost 
+                SELECT dimension, model_name, 
+                       SUM(input_tokens) as in_tokens, 
+                       SUM(output_tokens) as out_tokens, 
+                       SUM(cost) as total_cost 
                 FROM token_usage 
                 WHERE session_id = ?
                 GROUP BY dimension, model_name
@@ -84,7 +113,10 @@ def get_usage_report(timeframe="week") -> list[dict]:
             days = 1 if timeframe == "day" else 7
             cutoff = time.time() - (days * 24 * 60 * 60)
             cursor.execute("""
-                SELECT dimension, model_name, SUM(input_tokens) as in_tokens, SUM(output_tokens) as out_tokens, SUM(cost) as total_cost 
+                SELECT dimension, model_name, 
+                       SUM(input_tokens) as in_tokens, 
+                       SUM(output_tokens) as out_tokens, 
+                       SUM(cost) as total_cost 
                 FROM token_usage 
                 WHERE timestamp >= ?
                 GROUP BY dimension, model_name

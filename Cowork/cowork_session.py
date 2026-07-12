@@ -57,7 +57,7 @@ from agent import maybe_summarize
 log = structlog.get_logger()
 
 BANNER = """
-╔═════════ Sicily Cowork v2.5.10 ═══════════╦════════════════ What Sicily Can Do ════════════════╗
+╔═════════ Sicily Cowork v2.5.11 ═══════════╦════════════════ What Sicily Can Do ════════════════╗
 ║                                           ║                                                    ║
 ║                                           ║    Sicily can search, inspect, read, organize,     ║
 ║  Files are sandboxed to this directory.   ║    and safely modify the contents of your          ║
@@ -290,9 +290,9 @@ async def run_local_session():
                     if event["event"] == "on_chat_model_end":
                         output = event.get("data", {}).get("output")
                         if output and hasattr(output, "usage_metadata") and output.usage_metadata:
+
                             from usage_tracker import record_usage
                             usage = output.usage_metadata
-                            # Try getting specific model from metadata, fallback to event name
                             model_name = output.response_metadata.get("model_name", event.get("name", "unknown"))
                             
                             record_usage(
@@ -300,7 +300,8 @@ async def run_local_session():
                                 session_id=thread_id,
                                 model_name=model_name,
                                 input_tokens=usage.get("input_tokens", 0),
-                                output_tokens=usage.get("output_tokens", 0)
+                                output_tokens=usage.get("output_tokens", 0),
+                                cached_input_tokens=usage.get("input_token_details", {}).get("cache_read_tokens", 0)
                             )
 
                     # 3. Intercept tool execution 

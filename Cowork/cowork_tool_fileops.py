@@ -31,6 +31,17 @@ they need their own extraction/validation logic and are planned as a
 separate module. Operations here refuse on out-of-scope extensions with a
 clear message rather than silently mishandling them.
 
+IMPORTANT — this is a DIFFERENT (broader) scope than write_file/edit_file_lines
+in cowork_tools.py. Those tools exclude .pdf/.docx/.xlsx/.xls/.doc because
+overwriting binary content requires structured serialisation, not raw text I/O.
+That restriction does NOT apply here. copy_file, move_file, rename_file, and
+delete_file are pure filesystem operations (shutil.copy2/shutil.move) — they
+never open, parse, or rewrite the file's content, so binary format is
+irrelevant to them. If you're about to tell the user a .pdf/.docx/.xlsx/.xls/.doc
+file "can't be moved because it's binary" — that's a stale generalization from
+the write-tool restriction. It's wrong for the tools in this module. Just call
+the tool and trust its actual return value instead of pre-deciding it will fail.
+
 Safety model (matches cowork_tools.py conventions)
 ----------------------------------------------------
   - Every path goes through the same _safe_path() sandbox check used
@@ -115,6 +126,11 @@ def copy_file(source: str, destination: str, overwrite: bool = False) -> str:
     Copy a file to a new location within the sandbox. The source is left
     untouched — this only duplicates it.
 
+    Works on PDF, DOCX, XLSX, XLS, and DOC files, not just plain text —
+    this copies raw bytes (shutil.copy2), it never parses or rewrites
+    content, so binary format is not a blocker. Only archives, images,
+    and audio/video are currently out of scope (see module docstring).
+
     Safety guarantees
     ------------------
     - Both `source` and `destination` must resolve inside the sandbox.
@@ -172,6 +188,13 @@ def move_file(source: str, destination: str, overwrite: bool = False) -> str:
     Move (relocate into a different folder) an existing file within the
     sandbox. For renaming a file in place, prefer `rename_file` — same
     underlying operation, but the name better matches that intent.
+
+    Works on PDF, DOCX, XLSX, XLS, and DOC files, not just plain text —
+    this is a filesystem relocation, not a content rewrite, so binary
+    formats are fully supported. (Don't confuse this with write_file's
+    text-only restriction — that's a different tool with a different,
+    narrower scope. Call this tool on binary files directly rather than
+    assuming it will fail.)
 
     Safety guarantees
     ------------------
