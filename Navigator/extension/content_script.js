@@ -428,29 +428,46 @@
           padding: 9px 12px;
           border-radius: 10px;
           border: 1px solid rgba(255, 255, 255, 0.1);
-          background: rgba(28, 28, 30, 0.6); /* Translucent input background */
+          background: rgba(28, 28, 30, 0.6);
           color: #f2f2f7;
           font-size: 13.5px;
           outline: none;
           transition: border-color 0.2s;
         }
-        input:focus { border-color: rgba(94, 92, 230, 0.8); } /* Subtle Apple Purple/Blue focus */
+        input:focus { border-color: rgba(94, 92, 230, 0.8); }
 
+        .action-btns {
+          display: flex;
+          gap: 6px;
+        }
+        
         .submit-btn {
-          padding: 9px 16px;
+          padding: 9px 14px;
           border-radius: 10px;
           border: none;
-          background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%); /* Apple Purple gradient */
-          color: white;
           font-size: 13.5px;
           font-weight: 600;
           cursor: pointer;
           box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-          transition: transform 0.1s;
+          transition: transform 0.1s, background 0.15s;
         }
-        .submit-btn:hover { background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%); }
-        .submit-btn:active { transform: scale(0.97); }
-        .submit-btn:disabled { background: #3a3a3c; color: #888; cursor: not-allowed; }
+        
+        /* The Ask Button - Translucent Gray */
+        .btn-ask {
+          background: rgba(120, 120, 128, 0.2);
+          color: #f2f2f7;
+        }
+        .btn-ask:hover:not(:disabled) { background: rgba(120, 120, 128, 0.4); }
+        
+        /* The Edit Button - Apple Purple */
+        .btn-edit {
+          background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
+          color: white;
+        }
+        .btn-edit:hover:not(:disabled) { background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%); }
+        
+        .submit-btn:active:not(:disabled) { transform: scale(0.96); }
+        .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .status {
           font-size: 11px;
@@ -514,11 +531,14 @@
 
       <div class="wrap">
         <div class="neural-glow"></div>
-        <div class="notice">${notice || ""}</div>
+        <div class="notice" style="display: none;"></div>
         <div class="content">
           <div class="view input-view active">
-            <input type="text" placeholder="Describe edit..." />
-            <button class="submit-btn">Go</button>
+            <input type="text" placeholder="Ask or describe edit..." />
+            <div class="action-btns">
+              <button class="submit-btn btn-ask">Ask</button>
+              <button class="submit-btn btn-edit">Edit</button>
+            </div>
           </div>
           
           <div class="status"></div>
@@ -541,8 +561,10 @@
     const inputView = shadow.querySelector(".input-view");
     const resultView = shadow.querySelector(".result-view");
     const input = shadow.querySelector("input");
-    const submitBtn = shadow.querySelector(".submit-btn");
+    const askBtn = shadow.querySelector(".btn-ask");
+    const editBtn = shadow.querySelector(".btn-edit");
     const status = shadow.querySelector(".status");
+    const noticeEl = shadow.querySelector(".notice");
     const resultText = shadow.querySelector(".result-text");
     const replaceBtn = shadow.querySelector(".btn-replace");
     const copyBtn = shadow.querySelector(".btn-copy");
@@ -625,9 +647,9 @@
     }
 
     function setBusy(isBusy) {
-      submitBtn.disabled = isBusy;
+      askBtn.disabled = isBusy;
+      editBtn.disabled = isBusy;
       input.disabled = isBusy;
-      submitBtn.textContent = isBusy ? "..." : "Go";
 
       // Toggle neural glow/border shaders
       if (isBusy) {
@@ -638,7 +660,8 @@
     }
 
     // Morph the window from Input to Preview mode with animation
-    function showPreviewMode(text) {
+    // Morph the window from Input to Preview mode with animation
+    function showPreviewMode(text, actionType) {
       pendingAiText = text;
 
       // Use the smooth lerp engine
@@ -650,13 +673,21 @@
         resultText.textContent = text;
         resultView.classList.add("active");
 
+        // Show the warning ONLY if the user tried to execute an 'edit' on static text
+        if (actionType === "edit" && context.tier === "readonly") {
+          noticeEl.textContent = "Static text detected — edits will show as a copyable result.";
+          noticeEl.style.display = "block";
+        } else {
+          noticeEl.style.display = "none";
+        }
+
         if (context.tier === "readonly") {
           replaceBtn.style.display = "none";
         }
       });
     }
 
-    function submit() {
+    function submit(actionType) {
       const instruction = input.value.trim();
       if (!instruction) return;
 
@@ -664,7 +695,12 @@
       status.style.display = "none";
 
       chrome.runtime.sendMessage(
-        { type: "navigator-edit-selection-request", selected_text: context.text, instruction },
+        {
+          type: "navigator-edit-selection-request",
+          selected_text: context.text,
+          instruction,
+          action_type: actionType
+        },
         (response) => {
           setBusy(false);
 
@@ -673,22 +709,30 @@
             return;
           }
           if (!response || !response.ok) {
-            showError((response && response.error) || "Edit failed.");
+            showError((response && response.error) || "Action failed.");
             return;
           }
 
-          showPreviewMode(response.edited_text);
+          showPreviewMode(response.edited_text, actionType);
         }
       );
     }
 
-    submitBtn.addEventListener("click", submit);
+    askBtn.addEventListener("click", () => submit("ask"));
+    editBtn.addEventListener("click", () => submit("edit"));
 
     input.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === "Enter") submit();
+      if (e.key === "Enter") {
+        if (e.shiftKey) {
+          submit("ask");
+        } else {
+          submit("edit");
+        }
+      }
       if (e.key === "Escape") closeActiveBox();
     });
+
     input.addEventListener("keyup", (e) => e.stopPropagation());
     input.addEventListener("keypress", (e) => e.stopPropagation());
 

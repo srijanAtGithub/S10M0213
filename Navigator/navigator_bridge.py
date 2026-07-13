@@ -157,18 +157,10 @@ async def delete_session(tab_id: str):
 
 
 class EditSelectionRequest(BaseModel):
-    """
-    One-shot, stateless: no tab_id, no history, no SessionStore involved.
-    The content script sends exactly what it has in hand at the moment
-    the user submits the floating input — nothing is remembered after
-    the response goes back.
-    """
     selected_text: str
     instruction: str
-    # Optional: a bit of surrounding text for context. Not required yet,
-    # not used by the placeholder — here so the wire format doesn't need
-    # to change when a real model gets wired in.
     surrounding_context: str = ""
+    action_type: str = "edit"  # New flag: "edit" or "ask"
 
 
 class EditSelectionResponse(BaseModel):
@@ -178,54 +170,57 @@ class EditSelectionResponse(BaseModel):
 # For Pydantic purposes
 class EditResult(BaseModel):
     edited_text: str = Field(
-        description="The final revised text based on the user's instruction."
+        description="The final output to return to the user, either a rewritten text or a direct answer to their question."
     )
 
 
-async def call_edit_model(selected_text: str, instruction: str, surrounding_context: str = "") -> str:
-    """
-    Invokes the Sicily intent LLM (gpt-5.4-nano) to rewrite the selected text.
-    """
-    # Grab the configured LLM, enforcing our Pydantic schema
+async def call_edit_model(selected_text: str, instruction: str, action_type: str = "edit", surrounding_context: str = "") -> str:
     llm = configuration.get_intent_llm(EditResult)
     
-    # Set up the system behavior
-    system_msg = SystemMessage(
-        content=(
-            "You are a precise writing assistant. "
-            "Rewrite the user's selected text exactly according to their instruction. "
-            "Output only the finalized text without conversational filler or Markdown formatting."
+    # Branch the persona based on the button clicked
+    if action_type == "ask":
+        system_msg = SystemMessage(
+            content=(
+                "You are a precise, direct information assistant. "
+                "The user has selected some text and asked a question about it. "
+                "Answer their question completely and directly based on the selected text and context. "
+                "CRITICAL CONSTRAINT: Output ONLY the direct answer to the user's question. "
+                "Do NOT include any conversational filler, pleasantries, meta-commentary, "
+                "or follow-up prompts (e.g., never end with 'Let me know if you need more details', "
+                "'Hope this helps!', or 'Shall I do anything else?'). "
+                "Provide a clean, self-contained final response with absolutely no open-ended transitions."
+            )
         )
-    )
+    else:
+        system_msg = SystemMessage(
+            content=(
+                "You are an automated, programmatic text-replacement engine. "
+                "Rewrite the user's selected text exactly according to their instruction. "
+                "CRITICAL CONSTRAINT: Output EXCLUSIVELY the final revised text. "
+                "Do NOT include any introductions, explanations, pleasantries, meta-commentary, "
+                "or follow-up questions (e.g., never say 'Here is the rewrite' or ask 'Want me to shorten it?'). "
+                "Your entire output will be injected directly into the user's document, so any extra words, "
+                "conversational notes, or markdown formatting wrappers will completely corrupt their file."
+            )
+        )
     
-    # Construct the user prompt
-    prompt_text = f"Instruction: {instruction}\n\nSelected Text:\n{selected_text}"
-    
+    prompt_text = f"Instruction/Question: {instruction}\n\nSelected Text:\n{selected_text}"
     if surrounding_context:
-        prompt_text += f"\n\nSurrounding Context (for reference only):\n{surrounding_context}"
+        prompt_text += f"\n\nSurrounding Context:\n{surrounding_context}"
         
-    human_msg = HumanMessage(content=prompt_text)
-    
-    # Execute the call
-    response = await llm.ainvoke([system_msg, human_msg])
-    
-    # Return the extracted string from the structured Pydantic object
+    response = await llm.ainvoke([system_msg, HumanMessage(content=prompt_text)])
     return response.edited_text
 
 
 @app.post("/edit-selection", response_model=EditSelectionResponse)
 async def edit_selection(req: EditSelectionRequest):
-    """
-    Backend for the "Edit with Navigator" context-menu flow. Single-shot:
-    selected text + instruction in, edited text out. No tab_id, no
-    SessionStore, no relationship to the WebSocket chat above.
-    """
-    log.info(
-        "Edit-selection request",
-        instruction=req.instruction,
-        selected_len=len(req.selected_text),
+    # Pass the action_type down
+    edited = await call_edit_model(
+        req.selected_text, 
+        req.instruction, 
+        req.action_type, 
+        req.surrounding_context
     )
-    edited = await call_edit_model(req.selected_text, req.instruction, req.surrounding_context)
     return EditSelectionResponse(edited_text=edited)
 
 

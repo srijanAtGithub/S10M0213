@@ -75,6 +75,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     body: JSON.stringify({
       selected_text: message.selected_text,
       instruction: message.instruction,
+      action_type: message.action_type || "edit"
     }),
   })
     .then((res) => {
