@@ -1,4 +1,4 @@
-# Sicily — Navigator dimension (demo, no AI)
+# Sicily — Navigator dimension
 
 Baby-steps demo. No LLM, no tools, no MCP. Proves the full loop:
 
@@ -35,7 +35,7 @@ Leave this running. The extension connects to `ws://localhost:8765/ws`.
 2. Enable **Developer mode** (top right toggle)
 3. Click **Load unpacked**
 4. Select the `Navigator/extension` folder
-5. The "Sicily Navigator (Demo)" icon appears in your toolbar
+5. The "Sicily Navigator" icon appears in your toolbar
 
 ## 3. Test it
 

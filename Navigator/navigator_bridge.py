@@ -24,9 +24,16 @@ Session lifecycle (this is the piece that used to be missing):
     a real persistence layer can replace SessionStore later without
     touching the graph or the extension's protocol.
 
+This file also exposes a second, unrelated pipeline: POST /edit-selection,
+for the "Edit with Navigator" right-click-a-selection flow. That one is
+deliberately NOT part of the tab-session system above — it's stateless,
+single-shot (selected text + instruction in, edited text out), has no
+tab_id, and touches SessionStore not at all. Don't be tempted to route it
+through the WebSocket/graph machinery; it has no conversation to remember.
+
 Run it:
-    uv run uvicorn navigator_bridge:app --reload --port 8765
-    (or: python -m uvicorn navigator_bridge:app --reload --port 8765)
+    uv run uvicorn Navigator.navigator_bridge:app --reload --port 8765
+    (or: python -m uvicorn Navigator.navigator_bridge:app --reload --port 8765)
 
 This intentionally does NOT reuse configuration.py / agent.py / Cowork —
 there is no LLM to configure yet. Once the real AI is wired in, this file
@@ -40,6 +47,7 @@ import structlog
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from pydantic import BaseModel
 
 from Navigator.navigator_graph import build_navigator_graph
 
@@ -140,6 +148,54 @@ async def delete_session(tab_id: str):
     """
     existed = sessions.clear(tab_id)
     return {"status": "cleared", "existed": existed}
+
+
+class EditSelectionRequest(BaseModel):
+    """
+    One-shot, stateless: no tab_id, no history, no SessionStore involved.
+    The content script sends exactly what it has in hand at the moment
+    the user submits the floating input — nothing is remembered after
+    the response goes back.
+    """
+    selected_text: str
+    instruction: str
+    # Optional: a bit of surrounding text for context. Not required yet,
+    # not used by the placeholder — here so the wire format doesn't need
+    # to change when a real model gets wired in.
+    surrounding_context: str = ""
+
+
+class EditSelectionResponse(BaseModel):
+    edited_text: str
+
+
+async def call_edit_model(selected_text: str, instruction: str, surrounding_context: str = "") -> str:
+    """
+    PLACEHOLDER — no AI yet.
+
+    This is the single seam where a real LangChain call goes later: one
+    prompt in, one rewritten string out, no conversation, no tools, no
+    LangGraph. Deliberately not a graph node and not touching SessionStore
+    — this whole feature is a stateless request/response, unlike the tab
+    chat above.
+    """
+    return "Srijan"
+
+
+@app.post("/edit-selection", response_model=EditSelectionResponse)
+async def edit_selection(req: EditSelectionRequest):
+    """
+    Backend for the "Edit with Navigator" context-menu flow. Single-shot:
+    selected text + instruction in, edited text out. No tab_id, no
+    SessionStore, no relationship to the WebSocket chat above.
+    """
+    log.info(
+        "Edit-selection request",
+        instruction=req.instruction,
+        selected_len=len(req.selected_text),
+    )
+    edited = await call_edit_model(req.selected_text, req.instruction, req.surrounding_context)
+    return EditSelectionResponse(edited_text=edited)
 
 
 @app.websocket("/ws/{tab_id}")
