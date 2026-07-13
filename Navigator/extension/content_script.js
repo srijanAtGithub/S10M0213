@@ -419,15 +419,15 @@
         /* --- STATE 1: Input View --- */
         .input-view {
           display: flex;
+          flex-direction: column; /* Stacks the text area and buttons vertically */
           padding: 10px;
           gap: 8px;
-          align-items: flex-end; /* Keeps buttons anchored perfectly at the bottom right */
         }
         textarea {
-          flex: 1;
+          width: 100%; /* Reclaims all horizontal space */
           height: 36px;
           min-height: 36px;
-          max-height: 160px; /* Caps expansion before it gets unreasonably tall */
+          max-height: 160px;
           padding: 8px 12px;
           border-radius: 10px;
           border: 1px solid rgba(255, 255, 255, 0.1);
@@ -436,7 +436,7 @@
           font-size: 13.5px;
           outline: none;
           transition: border-color 0.2s;
-          resize: none; /* Prevents manual drag breaking the window geometry */
+          resize: none;
           font-family: inherit;
           box-sizing: border-box;
           line-height: 1.5;
@@ -447,6 +447,7 @@
         .action-btns {
           display: flex;
           gap: 6px;
+          align-self: flex-end; /* Anchors the buttons to the bottom right under the text */
         }
         
         .submit-btn {

@@ -174,6 +174,8 @@ class EditResult(BaseModel):
     )
 
 
+import uuid
+
 async def call_edit_model(selected_text: str, instruction: str, action_type: str = "edit", surrounding_context: str = "") -> str:
     llm = configuration.get_intent_llm(EditResult)
     
@@ -208,8 +210,46 @@ async def call_edit_model(selected_text: str, instruction: str, action_type: str
     if surrounding_context:
         prompt_text += f"\n\nSurrounding Context:\n{surrounding_context}"
         
-    response = await llm.ainvoke([system_msg, HumanMessage(content=prompt_text)])
-    return response.edited_text
+    from usage_tracker import record_usage
+    
+    edited_text = ""
+    session_id = f"edit_{uuid.uuid4().hex[:8]}"
+    
+    try:
+        # Use astream_events to catch the AIMessage tokens before Pydantic parsing
+        async for event in llm.astream_events([system_msg, HumanMessage(content=prompt_text)], version="v2"):
+            
+            # 1. Catch the raw LLM usage stats
+            if event["event"] == "on_chat_model_end":
+                output = event.get("data", {}).get("output")
+                if output and hasattr(output, "usage_metadata") and output.usage_metadata:
+                    usage = output.usage_metadata
+                    model_name = output.response_metadata.get("model_name", "unknown")
+                    
+                    record_usage(
+                        dimension="navigator",
+                        session_id=session_id,
+                        model_name=model_name,
+                        input_tokens=usage.get("input_tokens", 0),
+                        output_tokens=usage.get("output_tokens", 0),
+                        cached_input_tokens=usage.get("input_token_details", {}).get("cache_read_tokens", 0)
+                    )
+            
+            # 2. Catch the final structured output
+            elif event["event"] == "on_chain_end":
+                data_out = event.get("data", {}).get("output")
+                if isinstance(data_out, EditResult):
+                    edited_text = data_out.edited_text
+                    
+    except Exception as e:
+        log.warning("Failed during edit event stream tracking", error=str(e))
+    
+    # Fallback in case the event stream didn't resolve the text correctly
+    if not edited_text:
+        response = await llm.ainvoke([system_msg, HumanMessage(content=prompt_text)])
+        edited_text = response.edited_text
+        
+    return edited_text
 
 
 @app.post("/edit-selection", response_model=EditSelectionResponse)
@@ -252,6 +292,27 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
                 "page_url": page_url,
                 "page_title": page_title,
             })
+
+            # Track token usage from the returned message state
+            try:
+                from usage_tracker import record_usage
+                for msg in result["messages"]:
+                    if hasattr(msg, "usage_metadata") and msg.usage_metadata:
+                        usage_meta = msg.usage_metadata
+                        model_name = msg.response_metadata.get("model_name", "unknown")
+                        msg_id = getattr(msg, "id", None)
+                        
+                        record_usage(
+                            dimension="navigator",
+                            session_id=tab_id,
+                            model_name=model_name,
+                            input_tokens=usage_meta.get("input_tokens", 0),
+                            output_tokens=usage_meta.get("output_tokens", 0),
+                            cached_input_tokens=usage_meta.get("input_token_details", {}).get("cache_read_tokens", 0),
+                            message_id=msg_id
+                        )
+            except Exception as token_err:
+                log.warning("Failed to collect navigator token metrics", error=str(token_err))
 
             # Persist the updated history (old messages + new human + new ai)
             # for this tab, so it's there next time this tab's popup opens.

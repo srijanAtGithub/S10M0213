@@ -157,6 +157,27 @@ def start():
     asyncio.run(run_local_session())
 
 
+@main_cli.command()
+def navigator():
+    """Start the Sicily Navigator backend for the browser extension."""
+    # Only require the OpenAI API key for this specific tool
+    ensure_initialized(required_keys=["OPENAI_API_KEY"])
+    
+    import uvicorn
+    import click
+    
+    click.secho("\n  Starting Sicily Navigator on http://127.0.0.1:8765", fg="green", bold=True)
+    click.echo("  Waiting for extension requests...\n")
+    
+    # Run uvicorn programmatically (reload=False is safer/cleaner for production)
+    uvicorn.run(
+        "Navigator.navigator_bridge:app", 
+        host="127.0.0.1", 
+        port=8765, 
+        log_level="info"
+    )
+
+
 @main_cli.command(name="reset")
 def reset():
     """Reset all config, personalization, and indexed files back to default."""
@@ -386,6 +407,7 @@ def help():
     click.echo("  config        - Open the config folder")
     click.echo("  run           - Run the agent")
     click.echo("  start         - Start a local terminal session")
+    click.echo("  navigator     - Start the browser extension backend")
     click.echo("  usage         - Show token usage and estimated cost")
     click.echo("  update        - Update Sicily to the latest version")
     click.echo("  reset         - Reset all config and indexes back to default")
