@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Sicily Navigator (Demo)",
-  "version": "0.1.0",
-  "description": "Demo build \u2014 no AI yet. Chat interface that echoes back the current page's title and URL.",
+  "version": "0.2.0",
+  "description": "Demo build \u2014 no AI yet. Chat interface with per-tab conversation memory that echoes back the current page's title and URL.",
   "permissions": [
     "activeTab",
     "scripting"

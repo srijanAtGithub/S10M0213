@@ -1,12 +1,12 @@
-# Sicily — Browser dimension (demo, no AI)
+# Sicily — Navigator dimension (demo, no AI)
 
 Baby-steps demo. No LLM, no tools, no MCP. Proves the full loop:
 
 ```
 extension popup (chat UI)
    -> reads active tab's URL/title (chrome.tabs)
-   -> WebSocket -> browser_bridge.py (FastAPI)
-   -> browser_graph.py (LangGraph, one node, no AI)
+   -> WebSocket -> navigator_bridge.py (FastAPI)
+   -> navigator_graph.py (LangGraph, one node, no AI)
    -> reply sent back down the same WebSocket
    -> rendered in the popup
 ```
@@ -74,16 +74,17 @@ Navigator/
 ## What's deliberately NOT here yet
 
 - No LLM (`configuration.py` isn't touched)
-- No tools (no `browser_tools.py` with click/type/navigate)
+- No tools (no `navigator_tools.py` with click/type/navigate)
 - No API key / auth check
-- No multi-tab / "any overleaf.com/* page" permission scoping
+- No multi-tab / "any overleaf.com/\* page" permission scoping
   (extension currently reads whatever tab is active when you hit Send —
   that's the `activeTab` + `chrome.tabs` permission, the simplest case)
 - No persistence — every popup open is a fresh, stateless graph run
 
 These are the next steps, each additive on top of this scaffold:
+
 1. Swap `echo_node` for a real `main_node` calling `configuration.get_main_llm()`
-2. Add `browser_tools.py` (click/read_dom/navigate) — content script becomes
+2. Add `navigator_tools.py` (click/read_dom/navigate) — content script becomes
    the execution target instead of just a read-only info source
 3. Add origin-wide permission scoping in `background.js` so "start" on one
    page gives access to all tabs on that origin
