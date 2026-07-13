@@ -57,6 +57,14 @@
   const OPEN_BOX_MESSAGE = "navigator-open-edit-box";
   const EDIT_REQUEST_MESSAGE = "navigator-edit-selection-request";
 
+  if (!document.getElementById("navigator-highlight-style")) {
+    const style = document.createElement("style");
+    style.id = "navigator-highlight-style";
+    // Using a nice transparent version of your #3a6df0 blue
+    style.textContent = `::highlight(navigator-selection) { background-color: rgba(58, 109, 240, 0.3); color: inherit; }`;
+    document.head.appendChild(style);
+  }
+
   let activeBox = null; // only one edit box open at a time
 
   // ── Tier 3 fingerprints ─────────────────────────────────────────────
@@ -151,12 +159,12 @@
 
     if (!editableRoot) {
       // Selected, but nothing editable underneath it — ordinary page text.
-      return { tier: "readonly", text, rect };
+      return { tier: "readonly", text, rect, range: range.cloneRange() };
     }
 
     const framework = detectFramework(editableRoot);
     if (framework) {
-      return { tier: "rich-text", frameworkName: framework, text, rect };
+      return { tier: "rich-text", frameworkName: framework, text, rect, range: range.cloneRange() };
     }
 
     return {
@@ -209,6 +217,11 @@
     activeBox.host.remove();
     document.removeEventListener("keydown", activeBox.onKeydown, true);
     document.removeEventListener("mousedown", activeBox.onOutsideClick, true);
+    
+    if (CSS.highlights) {
+      CSS.highlights.delete("navigator-selection");
+    }
+
     activeBox = null;
   }
 
@@ -224,6 +237,11 @@
 
   function openEditBox(context) {
     closeActiveBox();
+
+    if (CSS.highlights && context.range) {
+      const highlight = new Highlight(context.range);
+      CSS.highlights.set("navigator-selection", highlight);
+    }
 
     const host = document.createElement("div");
     host.style.position = "fixed";
