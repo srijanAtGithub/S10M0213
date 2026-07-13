@@ -176,37 +176,106 @@
     };
   }
 
-  function applyEdit(context, editedText) {
-    if (context.tier === "form") {
+  // Helper: Briefly flash a subtle highlight on an element to signal a change
+  function pulseElement(el) {
+    if (!el) return;
+    const originalTransition = el.style.transition;
+    const originalBg = el.style.backgroundColor;
+    
+    // Apply a smooth transition and a soft blue/green glow
+    el.style.transition = "background-color 0.15s ease-in-out";
+    el.style.backgroundColor = "rgba(58, 109, 240, 0.15)"; // Soft blue pulse
+    
+    setTimeout(() => {
+      el.style.transition = "background-color 0.8s ease-out";
+      el.style.backgroundColor = originalBg;
+      
+      // Clean up inline styles after the fade finishes
+      setTimeout(() => {
+        el.style.transition = originalTransition;
+        if (!originalBg) el.style.removeProperty("background-color");
+      }, 800);
+    }, 200);
+  }
+
+  // Smoothly apply edits with a rapid typewriter animation
+  function applyEdit(context, newText) {
+    if (!newText) return;
+
+    // ── TIER 1: Form Fields (<input>, <textarea>) ─────────────────────
+    if (context.tier === "form" && context.element) {
       const el = context.element;
-      const before = el.value.slice(0, context.start);
-      const after = el.value.slice(context.end);
-      el.value = before + editedText + after;
-      const newCursor = context.start + editedText.length;
-      el.setSelectionRange(newCursor, newCursor);
-      el.focus();
-      // Plain vanilla-JS forms pick this up fine. Frameworks that manage
-      // their own state on top of the input (React/Vue-controlled fields)
-      // sometimes ignore a direct .value assignment even with this event
-      // dispatched — that needs the native-setter workaround, out of
-      // scope for this pass.
-      el.dispatchEvent(new Event("input", { bubbles: true }));
+      const start = el.selectionStart || 0;
+      const end = el.selectionEnd || 0;
+      const oldVal = el.value;
+      
+      const prefix = oldVal.substring(0, start);
+      const suffix = oldVal.substring(end);
+
+      let charIndex = 0;
+      // Calculate typing speed to ensure the whole edit takes ~350ms max
+      const speed = Math.max(8, Math.floor(350 / newText.length)); 
+
+      const timer = setInterval(() => {
+        charIndex += Math.max(1, Math.floor(newText.length / 25)); // Type in small chunks for speed
+        if (charIndex >= newText.length) {
+          charIndex = newText.length;
+          clearInterval(timer);
+          pulseElement(el);
+        }
+
+        const currentSlice = newText.substring(0, charIndex);
+        el.value = prefix + currentSlice + suffix;
+        
+        // Keep cursor at the end of the newly typed text
+        const newCursorPos = prefix.length + currentSlice.length;
+        el.setSelectionRange(newCursorPos, newCursorPos);
+
+        // CRITICAL: Dispatch input events so React/Vue/GitHub know the value changed!
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }, speed);
+
+      el.dispatchEvent(new Event("change", { bubbles: true }));
       return;
     }
 
-    if (context.tier === "contenteditable") {
-      context.range.deleteContents();
-      const node = document.createTextNode(editedText);
-      context.range.insertNode(node);
+    // ── TIER 2: ContentEditable ───────────────────────────────────────
+    if (context.tier === "contenteditable" && context.range) {
+      const range = context.range;
+      range.deleteContents();
 
-      const sel = window.getSelection();
-      const newRange = document.createRange();
-      newRange.setStartAfter(node);
-      newRange.collapse(true);
-      sel.removeAllRanges();
-      sel.addRange(newRange);
+      // Create a text node to hold our streaming text
+      const textNode = document.createTextNode("");
+      range.insertNode(textNode);
 
-      context.root.dispatchEvent(new Event("input", { bubbles: true }));
+      let charIndex = 0;
+      const speed = Math.max(8, Math.floor(350 / newText.length));
+
+      const timer = setInterval(() => {
+        charIndex += Math.max(1, Math.floor(newText.length / 25));
+        if (charIndex >= newText.length) {
+          charIndex = newText.length;
+          clearInterval(timer);
+          pulseElement(context.root);
+        }
+
+        textNode.nodeValue = newText.substring(0, charIndex);
+
+        // Move selection to the end of the inserting text
+        const selection = window.getSelection();
+        if (selection) {
+          selection.removeAllRanges();
+          const newRange = document.createRange();
+          newRange.setStart(textNode, textNode.nodeValue.length);
+          newRange.collapse(true);
+          selection.addRange(newRange);
+        }
+
+        // Notify modern frameworks of the DOM mutation
+        if (context.root) {
+          context.root.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      }, speed);
     }
   }
 
