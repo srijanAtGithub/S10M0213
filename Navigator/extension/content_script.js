@@ -416,10 +416,19 @@
     }
 
     submitBtn.addEventListener("click", submit);
+    
+    // 1. Stop propagation on keydown
     input.addEventListener("keydown", (e) => {
+      e.stopPropagation(); // Stops GitHub from seeing the event
       if (e.key === "Enter") submit();
       if (e.key === "Escape") closeActiveBox();
     });
+
+    // 2. Also stop keyup and keypress, just in case a site's hotkeys 
+    // are bound to those instead of keydown.
+    input.addEventListener("keyup", (e) => e.stopPropagation());
+    input.addEventListener("keypress", (e) => e.stopPropagation());
+
     copyBtn.addEventListener("click", () => {
       navigator.clipboard?.writeText(resultText.textContent || "").catch(() => {});
       copyBtn.textContent = "Copied";
