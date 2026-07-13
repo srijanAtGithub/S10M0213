@@ -421,11 +421,14 @@
           display: flex;
           padding: 10px;
           gap: 8px;
-          align-items: center;
+          align-items: flex-end; /* Keeps buttons anchored perfectly at the bottom right */
         }
-        input {
+        textarea {
           flex: 1;
-          padding: 9px 12px;
+          height: 36px;
+          min-height: 36px;
+          max-height: 160px; /* Caps expansion before it gets unreasonably tall */
+          padding: 8px 12px;
           border-radius: 10px;
           border: 1px solid rgba(255, 255, 255, 0.1);
           background: rgba(28, 28, 30, 0.6);
@@ -433,8 +436,13 @@
           font-size: 13.5px;
           outline: none;
           transition: border-color 0.2s;
+          resize: none; /* Prevents manual drag breaking the window geometry */
+          font-family: inherit;
+          box-sizing: border-box;
+          line-height: 1.5;
+          overflow-y: auto;
         }
-        input:focus { border-color: rgba(94, 92, 230, 0.8); }
+        textarea:focus { border-color: rgba(94, 92, 230, 0.8); }
 
         .action-btns {
           display: flex;
@@ -534,7 +542,7 @@
         <div class="notice" style="display: none;"></div>
         <div class="content">
           <div class="view input-view active">
-            <input type="text" placeholder="Ask or describe edit..." />
+            <textarea placeholder="Ask or describe edit..." rows="1"></textarea>
             <div class="action-btns">
               <button class="submit-btn btn-ask">Ask</button>
               <button class="submit-btn btn-edit">Edit</button>
@@ -546,7 +554,6 @@
           <div class="view result-view">
             <div class="result-text"></div>
             <div class="actions">
-              <button class="btn btn-cancel">Cancel</button>
               <button class="btn btn-copy">Copy</button>
               <button class="btn btn-replace">Replace</button>
             </div>
@@ -560,7 +567,7 @@
     const wrapEl = shadow.querySelector(".wrap");
     const inputView = shadow.querySelector(".input-view");
     const resultView = shadow.querySelector(".result-view");
-    const input = shadow.querySelector("input");
+    const input = shadow.querySelector("textarea");
     const askBtn = shadow.querySelector(".btn-ask");
     const editBtn = shadow.querySelector(".btn-edit");
     const status = shadow.querySelector(".status");
@@ -568,7 +575,6 @@
     const resultText = shadow.querySelector(".result-text");
     const replaceBtn = shadow.querySelector(".btn-replace");
     const copyBtn = shadow.querySelector(".btn-copy");
-    const cancelBtn = shadow.querySelector(".btn-cancel");
 
     let pendingAiText = "";
 
@@ -721,12 +727,30 @@
     askBtn.addEventListener("click", () => submit("ask"));
     editBtn.addEventListener("click", () => submit("edit"));
 
+    // Smooth auto-grow mechanic for the textarea
+    input.addEventListener("input", () => {
+      input.style.height = "auto";
+      input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+    });
+
     input.addEventListener("keydown", (e) => {
       e.stopPropagation();
+
       if (e.key === "Enter") {
         if (e.shiftKey) {
+          // Allow Shift+Enter to naturally drop to the next line.
+          // Force a slight timeout recalculation to expand the UI frame dynamically.
+          setTimeout(() => {
+            input.style.height = "auto";
+            input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+          }, 0);
+        } else if (e.ctrlKey || e.metaKey) {
+          // Ctrl+Enter or Cmd+Enter triggers the "Ask" flow
+          e.preventDefault();
           submit("ask");
         } else {
+          // Regular Enter triggers the primary "Edit" flow
+          e.preventDefault();
           submit("edit");
         }
       }
@@ -752,8 +776,6 @@
         copyBtn.classList.remove("btn-success");
       }, 1200);
     });
-
-    cancelBtn.addEventListener("click", closeActiveBox);
 
     const onKeydown = (e) => { if (e.key === "Escape") closeActiveBox(); };
     const onOutsideClick = (e) => { if (!hostEl.contains(e.target)) closeActiveBox(); };
