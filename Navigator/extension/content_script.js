@@ -181,16 +181,14 @@
     if (!el) return;
     const originalTransition = el.style.transition;
     const originalBg = el.style.backgroundColor;
-    
-    // Apply a smooth transition and a soft blue/green glow
+
     el.style.transition = "background-color 0.15s ease-in-out";
     el.style.backgroundColor = "rgba(58, 109, 240, 0.15)"; // Soft blue pulse
-    
+
     setTimeout(() => {
       el.style.transition = "background-color 0.8s ease-out";
       el.style.backgroundColor = originalBg;
-      
-      // Clean up inline styles after the fade finishes
+
       setTimeout(() => {
         el.style.transition = originalTransition;
         if (!originalBg) el.style.removeProperty("background-color");
@@ -198,55 +196,19 @@
     }, 200);
   }
 
-  // Smoothly apply edits with a rapid typewriter animation
+  // Smoothly apply edits with an adaptive typewriter animation
   function applyEdit(context, newText) {
     if (!newText) return;
 
-    // ── TIER 1: Form Fields (<input>, <textarea>) ─────────────────────
+    // ── TIER 1: Standard Form Fields (<input>, <textarea>) ─────────────────────
     if (context.tier === "form" && context.element) {
       const el = context.element;
       const start = el.selectionStart || 0;
       const end = el.selectionEnd || 0;
       const oldVal = el.value;
-      
+
       const prefix = oldVal.substring(0, start);
       const suffix = oldVal.substring(end);
-
-      let charIndex = 0;
-      // Calculate typing speed to ensure the whole edit takes ~350ms max
-      const speed = Math.max(8, Math.floor(350 / newText.length)); 
-
-      const timer = setInterval(() => {
-        charIndex += Math.max(1, Math.floor(newText.length / 25)); // Type in small chunks for speed
-        if (charIndex >= newText.length) {
-          charIndex = newText.length;
-          clearInterval(timer);
-          pulseElement(el);
-        }
-
-        const currentSlice = newText.substring(0, charIndex);
-        el.value = prefix + currentSlice + suffix;
-        
-        // Keep cursor at the end of the newly typed text
-        const newCursorPos = prefix.length + currentSlice.length;
-        el.setSelectionRange(newCursorPos, newCursorPos);
-
-        // CRITICAL: Dispatch input events so React/Vue/GitHub know the value changed!
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      }, speed);
-
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-      return;
-    }
-
-    // ── TIER 2: ContentEditable ───────────────────────────────────────
-    if (context.tier === "contenteditable" && context.range) {
-      const range = context.range;
-      range.deleteContents();
-
-      // Create a text node to hold our streaming text
-      const textNode = document.createTextNode("");
-      range.insertNode(textNode);
 
       let charIndex = 0;
       const speed = Math.max(8, Math.floor(350 / newText.length));
@@ -256,26 +218,66 @@
         if (charIndex >= newText.length) {
           charIndex = newText.length;
           clearInterval(timer);
-          pulseElement(context.root);
+          pulseElement(el);
         }
 
-        textNode.nodeValue = newText.substring(0, charIndex);
+        const currentSlice = newText.substring(0, charIndex);
+        el.value = prefix + currentSlice + suffix;
 
-        // Move selection to the end of the inserting text
-        const selection = window.getSelection();
-        if (selection) {
-          selection.removeAllRanges();
-          const newRange = document.createRange();
-          newRange.setStart(textNode, textNode.nodeValue.length);
-          newRange.collapse(true);
-          selection.addRange(newRange);
+        const newCursorPos = prefix.length + currentSlice.length;
+        el.setSelectionRange(newCursorPos, newCursorPos);
+
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      }, speed);
+
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return;
+    }
+
+    // ── TIER 2 & 3: ContentEditable & Rich-Text Frameworks (Notion, Slack, etc.) ──
+    if ((context.tier === "contenteditable" || context.tier === "rich-text") && context.range) {
+      const selection = window.getSelection();
+      if (!selection) return;
+
+      // 1. Force focus back to the target element if it slipped away
+      if (context.root && typeof context.root.focus === "function") {
+        context.root.focus();
+      }
+
+      // 2. Re-select the exact text block the user highlighted
+      selection.removeAllRanges();
+      selection.addRange(context.range);
+
+      let charIndex = 0;
+      const speed = Math.max(8, Math.floor(350 / newText.length));
+      const chunkSize = Math.max(1, Math.floor(newText.length / 25));
+
+      // 3. Clear out the highlighted text using the browser's native command
+      // This alerts frameworks (like ProseMirror/Lexical) that an active deletion happened
+      document.execCommand("delete", false);
+
+      const timer = setInterval(() => {
+        if (charIndex >= newText.length) {
+          clearInterval(timer);
+          // Highlight target: use root container or fallback to where the cursor is resting
+          pulseElement(context.root || selection.anchorNode?.parentElement);
+          return;
         }
 
-        // Notify modern frameworks of the DOM mutation
+        const nextChunk = newText.substring(charIndex, charIndex + chunkSize);
+        charIndex += chunkSize;
+
+        // 4. Stream chunks directly at the cursor position
+        // The editor's virtual DOM engine intercepts this and updates safely!
+        document.execCommand("insertText", false, nextChunk);
+
+        // Throw an explicit input event at the container to cover reactive bindings
         if (context.root) {
           context.root.dispatchEvent(new Event("input", { bubbles: true }));
         }
       }, speed);
+
+      return;
     }
   }
 
@@ -291,7 +293,7 @@
     activeBox.host.remove();
     document.removeEventListener("keydown", activeBox.onKeydown, true);
     document.removeEventListener("mousedown", activeBox.onOutsideClick, true);
-    
+
     if (CSS.highlights) {
       CSS.highlights.delete("navigator-selection");
     }
@@ -300,12 +302,11 @@
   }
 
   function tierNotice(context) {
-    if (context.tier === "rich-text") {
-      return `Rich-text editor detected (${context.frameworkName}) — I can suggest an edit, but can't insert it automatically yet. You'll get a copyable result.`;
-    }
     if (context.tier === "readonly") {
-      return "This text isn't in an editable field — you'll get a copyable suggestion instead of an automatic edit.";
+      return "Static text detected — edits will show as a copyable result.";
     }
+    // We removed the rich-text warning entirely because our new 
+    // execCommand trick natively handles it now!
     return null;
   }
 
@@ -320,9 +321,7 @@
 
     const host = document.createElement("div");
     host.style.position = "fixed";
-    host.style.zIndex = "2147483647"; // stay above whatever the page has
-    host.style.left = `${Math.max(8, context.rect.left)}px`;
-    host.style.top = `${context.rect.bottom + 6}px`;
+    host.style.zIndex = "2147483647"; // Stay above everything
     document.body.appendChild(host);
 
     const shadow = host.attachShadow({ mode: "open" });
@@ -408,6 +407,7 @@
           display: flex;
           justify-content: flex-end;
           gap: 6px;
+          margin-top: 6px;
         }
       </style>
       <div class="wrap">
@@ -435,10 +435,51 @@
     const resultText = shadow.querySelector(".result-text");
     const copyBtn = shadow.querySelector(".copy-btn");
     const closeBtn = shadow.querySelector(".close-btn");
+    const wrapEl = shadow.querySelector(".wrap");
+
+    // --- NEW: Helper to get live, updated bounds of the target ---
+    function getFreshRect() {
+      if (context.tier === "form" && context.element) {
+        return context.element.getBoundingClientRect();
+      } else if (context.range) {
+        return context.range.getBoundingClientRect();
+      }
+      return context.rect;
+    }
+
+    // --- NEW: Smart collision positioning logic ---
+    function reposition() {
+      const rect = getFreshRect();
+      if (!rect) return;
+
+      // 1. Prevent Horizontal Clip (Right Edge)
+      const boxWidth = 340;
+      let left = rect.left;
+      if (left + boxWidth > window.innerWidth) {
+        left = window.innerWidth - boxWidth - 16;
+      }
+      host.style.left = `${Math.max(8, left)}px`;
+
+      // 2. Prevent Vertical Clip (Bottom Edge Check)
+      // Read the exact dynamic height of our wrapper box inside the shadow DOM
+      const boxHeight = wrapEl ? wrapEl.offsetHeight : 110;
+      const spaceBelow = window.innerHeight - rect.bottom;
+
+      // If space below is tighter than our box height, flip it over the top
+      if (spaceBelow < boxHeight + 12 && rect.top > boxHeight + 12) {
+        host.style.top = `${rect.top - boxHeight - 8}px`;
+      } else {
+        host.style.top = `${rect.bottom + 6}px`;
+      }
+    }
+
+    // Run the initial smart position calculation
+    reposition();
 
     function showError(msg) {
       status.textContent = msg;
       status.style.display = "block";
+      reposition(); // Re-calculate layout since error text expands the container height
     }
 
     function setBusy(isBusy) {
@@ -451,6 +492,7 @@
       box.style.display = "none";
       resultText.textContent = text;
       resultEl.style.display = "block";
+      reposition(); // Re-calculate layout since the result menu has a unique height
     }
 
     function submit() {
@@ -478,12 +520,11 @@
             return;
           }
 
-          if (context.tier === "form" || context.tier === "contenteditable") {
+          // --- Added context.tier === "rich-text" ---
+          if (context.tier === "form" || context.tier === "contenteditable" || context.tier === "rich-text") {
             applyEdit(context, response.edited_text);
             closeActiveBox();
           } else {
-            // rich-text or readonly: can't safely write back, so hand
-            // the suggestion to the user instead of silently discarding it.
             showResult(response.edited_text);
           }
         }
@@ -491,7 +532,7 @@
     }
 
     submitBtn.addEventListener("click", submit);
-    
+
     // 1. Stop propagation on keydown
     input.addEventListener("keydown", (e) => {
       e.stopPropagation(); // Stops GitHub from seeing the event
@@ -505,7 +546,7 @@
     input.addEventListener("keypress", (e) => e.stopPropagation());
 
     copyBtn.addEventListener("click", () => {
-      navigator.clipboard?.writeText(resultText.textContent || "").catch(() => {});
+      navigator.clipboard?.writeText(resultText.textContent || "").catch(() => { });
       copyBtn.textContent = "Copied";
       setTimeout(() => { copyBtn.textContent = "Copy"; }, 1200);
     });
@@ -520,18 +561,9 @@
 
     // --- Live Scroll tracking handler ---
     const handleScroll = () => {
-      let rect = null;
-      if (context.tier === "form" && context.element) {
-        rect = context.element.getBoundingClientRect();
-      } else if (context.range) {
-        rect = context.range.getBoundingClientRect();
-      }
-
-      if (rect) {
-        host.style.left = `${Math.max(8, rect.left)}px`;
-        host.style.top = `${rect.bottom + 6}px`;
-      }
+      reposition();
     };
+
     // true setting uses the capture phase, tracking scrolls on internal DOM containers too
     window.addEventListener("scroll", handleScroll, true);
 
