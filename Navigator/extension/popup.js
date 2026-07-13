@@ -1,26 +1,6 @@
-/**
- * popup.js
- * --------
- * Demo scope (no AI):
- *   1. Identifies the active tab (id, url, title).
- *   2. Restores that tab's chat history from the backend
- *      (GET /session/{tabId}) — so switching tabs and coming back shows
- *      the right conversation, not a blank window.
- *   3. Opens a WebSocket to the local Python backend, scoped to this tab
- *      (ws://localhost:8765/ws/{tabId}).
- *   4. Sends { text, page_url, page_title } on every user message.
- *   5. Renders whatever { reply } comes back — no AI yet, just proving the
- *      round trip + per-tab memory work.
- *
- * Session lifetime: this tab's history lives on the backend for as long as
- * the tab is open. It survives the popup being closed and reopened. It's
- * deleted only by the "Clear" button (explicit, immediate — no confirm
- * dialog yet, this is still v0.1.0) or when the tab itself closes
- * (background.js handles that via chrome.tabs.onRemoved).
- */
-
 const BACKEND_HOST = "localhost:8765";
 
+const appWrap = document.getElementById("app-wrap");
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("input-box");
 const sendBtn = document.getElementById("send-btn");
@@ -35,7 +15,11 @@ function addMessage(text, role) {
   el.className = `msg ${role}`;
   el.textContent = text;
   messagesEl.appendChild(el);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  // Quick fade-in layout bump
+  requestAnimationFrame(() => {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
 }
 
 function clearMessagesUI() {
@@ -43,7 +27,6 @@ function clearMessagesUI() {
 }
 
 function setStatus(state) {
-  // state: "connected" | "disconnected" | "connecting"
   statusDot.className = state === "connected"
     ? "connected"
     : state === "disconnected"
@@ -126,8 +109,6 @@ async function sendMessage() {
   inputEl.value = "";
   setSending(true);
 
-  // Refresh page info right before sending, in case the tab navigated
-  // while the popup was open.
   const fresh = await getActiveTabInfo();
   currentTab.url = fresh.url;
   currentTab.title = fresh.title;
@@ -145,7 +126,6 @@ async function handleClear() {
   const ok = await clearHistoryOnBackend(currentTab.id);
   if (ok) {
     clearMessagesUI();
-    // addMessage(`Looking at: ${currentTab.title || currentTab.url}`, "system");
     addMessage("Chat cleared.", "system");
   }
 }
@@ -158,6 +138,11 @@ inputEl.addEventListener("keydown", (e) => {
 
 // ── Init ──────────────────────────────────────────────────────────────
 (async () => {
+  // Trigger entry glass scaling immediately on window paint
+  requestAnimationFrame(() => {
+    if (appWrap) appWrap.classList.add("ready");
+  });
+
   currentTab = await getActiveTabInfo();
 
   if (currentTab.id == null) {
@@ -165,12 +150,11 @@ inputEl.addEventListener("keydown", (e) => {
     return;
   }
 
-  // addMessage(`Looking at: ${currentTab.title || currentTab.url}`, "system");
-
   const history = await loadHistory(currentTab.id);
   for (const m of history) {
     addMessage(m.text, m.role === "user" ? "user" : "ai");
   }
 
   connectSocket(currentTab.id);
+  inputEl.focus();
 })();

@@ -43,6 +43,12 @@ is deliberately shaped so that swap is easy: it's already just "tab_id ->
 list of LangChain messages", which is what a checkpointer would want too.
 """
 
+from pydantic import BaseModel, Field
+from langchain_core.messages import SystemMessage, HumanMessage
+
+import configuration
+configuration.load_config()
+
 import structlog
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -169,17 +175,42 @@ class EditSelectionResponse(BaseModel):
     edited_text: str
 
 
+# For Pydantic purposes
+class EditResult(BaseModel):
+    edited_text: str = Field(
+        description="The final revised text based on the user's instruction."
+    )
+
+
 async def call_edit_model(selected_text: str, instruction: str, surrounding_context: str = "") -> str:
     """
-    PLACEHOLDER — no AI yet.
-
-    This is the single seam where a real LangChain call goes later: one
-    prompt in, one rewritten string out, no conversation, no tools, no
-    LangGraph. Deliberately not a graph node and not touching SessionStore
-    — this whole feature is a stateless request/response, unlike the tab
-    chat above.
+    Invokes the Sicily intent LLM (gpt-5.4-nano) to rewrite the selected text.
     """
-    return "Srijan"
+    # Grab the configured LLM, enforcing our Pydantic schema
+    llm = configuration.get_intent_llm(EditResult)
+    
+    # Set up the system behavior
+    system_msg = SystemMessage(
+        content=(
+            "You are a precise writing assistant. "
+            "Rewrite the user's selected text exactly according to their instruction. "
+            "Output only the finalized text without conversational filler or Markdown formatting."
+        )
+    )
+    
+    # Construct the user prompt
+    prompt_text = f"Instruction: {instruction}\n\nSelected Text:\n{selected_text}"
+    
+    if surrounding_context:
+        prompt_text += f"\n\nSurrounding Context (for reference only):\n{surrounding_context}"
+        
+    human_msg = HumanMessage(content=prompt_text)
+    
+    # Execute the call
+    response = await llm.ainvoke([system_msg, human_msg])
+    
+    # Return the extracted string from the structured Pydantic object
+    return response.edited_text
 
 
 @app.post("/edit-selection", response_model=EditSelectionResponse)
