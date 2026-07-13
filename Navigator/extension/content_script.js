@@ -61,7 +61,7 @@
     const style = document.createElement("style");
     style.id = "navigator-highlight-style";
     // Using a nice transparent version of your #3a6df0 blue
-    style.textContent = `::highlight(navigator-selection) { background-color: rgba(58, 109, 240, 0.3); color: inherit; }`;
+    style.textContent = `::highlight(navigator-selection) { background-color: #3a6df0 !important; color: #ffffff !important; }`;
     document.head.appendChild(style);
   }
 
@@ -214,6 +214,11 @@
 
   function closeActiveBox() {
     if (!activeBox) return;
+
+    if (activeBox.onScroll) {
+      window.removeEventListener("scroll", activeBox.onScroll, true);
+    }
+
     activeBox.host.remove();
     document.removeEventListener("keydown", activeBox.onKeydown, true);
     document.removeEventListener("mousedown", activeBox.onOutsideClick, true);
@@ -238,6 +243,7 @@
   function openEditBox(context) {
     closeActiveBox();
 
+    // Apply the highlight if a DOM range exists
     if (CSS.highlights && context.range) {
       const highlight = new Highlight(context.range);
       CSS.highlights.set("navigator-selection", highlight);
@@ -442,12 +448,28 @@
     const onOutsideClick = (e) => {
       if (!host.contains(e.target)) closeActiveBox();
     };
+
+    // --- Live Scroll tracking handler ---
+    const handleScroll = () => {
+      let rect = null;
+      if (context.tier === "form" && context.element) {
+        rect = context.element.getBoundingClientRect();
+      } else if (context.range) {
+        rect = context.range.getBoundingClientRect();
+      }
+
+      if (rect) {
+        host.style.left = `${Math.max(8, rect.left)}px`;
+        host.style.top = `${rect.bottom + 6}px`;
+      }
+    };
+    // true setting uses the capture phase, tracking scrolls on internal DOM containers too
+    window.addEventListener("scroll", handleScroll, true);
+
     document.addEventListener("keydown", onKeydown, true);
-    // Delay attaching this by a tick so it doesn't immediately fire from
-    // whatever click/right-click just opened the context menu.
     setTimeout(() => document.addEventListener("mousedown", onOutsideClick, true), 0);
 
-    activeBox = { host, onKeydown, onOutsideClick };
+    activeBox = { host, onKeydown, onOutsideClick, onScroll: handleScroll };
     input.focus();
   }
 
