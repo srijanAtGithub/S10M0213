@@ -44,7 +44,7 @@ function setupContextMenu() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: EDIT_MENU_ID,
-      title: "Edit with Navigator",
+      title: "Use Sicily Writing Tools",
       // Only show when text is actually selected. content_script.js does
       // the real classification when clicked (form field vs. plain
       // contenteditable vs. framework-managed rich text vs. plain page

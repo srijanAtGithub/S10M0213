@@ -322,6 +322,7 @@
     const host = document.createElement("div");
     host.style.position = "fixed";
     host.style.zIndex = "2147483647"; // Stay above everything
+    host.style.transition = "opacity 0.3s ease"; // Initial fade-in
     document.body.appendChild(host);
 
     const shadow = host.attachShadow({ mode: "open" });
@@ -329,115 +330,227 @@
 
     shadow.innerHTML = `
       <style>
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, sans-serif; }
+
+        /* --- Main Premium Container (Apple Style) --- */
         .wrap {
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          width: 340px;
+          width: 380px;
+          border-radius: 18px; /* Classic smooth Apple corner */
+          border: 1px solid rgba(255, 255, 255, 0.12); /* Subtle edge definition */
+          
+          /* Glassmorphism Effect */
+          backdrop-filter: blur(25px); 
+          -webkit-backdrop-filter: blur(25px); /* Safari support */
+          background: rgba(44, 44, 46, 0.85); /* Premium Dark Mode Gray */
+          
+          /* The "Shader" / Glowing Border Effect */
+          box-shadow: 
+            0 12px 40px rgba(0, 0, 0, 0.45),      /* Depth Shadow */
+            0 0 20px rgba(94, 92, 230, 0.2),      /* Subtle Inner Blue Glow */
+            inset 0 0 1px rgba(255, 255, 255, 0.1); /* Crisp Inner Edge */
+
+          overflow: hidden; /* Contains the height animation */
+          position: relative; /* For the neural glow overlays */
+          opacity: 0;
+          transform: translateY(10px) scale(0.98); /* Start state for entry animation */
+          transition: 
+            height 0.45s cubic-bezier(0.25, 1, 0.5, 1), /* Smooth Height Animation */
+            opacity 0.3s ease-out, 
+            transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
+
+        /* Animate in the window */
+        .wrap.ready {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+
+        /* Content Container (holds views) */
+        .content {
+          position: relative;
+        }
+
+        /* Common Styling for Input and Result Views */
+        .view {
+          position: absolute;
+          width: 100%;
+          top: 0;
+          opacity: 0;
+          transition: opacity 0.35s ease-in-out;
+          pointer-events: none; /* Block interactions when hidden */
+          display: block; /* Use block, control visibility via opacity */
+        }
+
+        .view.active {
+          position: relative; /* Take up space for height calculation */
+          opacity: 1;
+          pointer-events: auto; /* Enable interaction */
+        }
+
+        /* --- Neural Glow Edge (Active state glow) --- */
+        .wrap.busy .neural-glow {
+          position: absolute;
+          top: 0; left: 0; right: 0; bottom: 0;
+          border-radius: 18px;
+          padding: 2px;
+          background: linear-gradient(135deg, rgba(94, 92, 230, 0.6), rgba(130, 240, 255, 0.6), rgba(94, 92, 230, 0.6));
+          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          -webkit-mask-composite: destination-out;
+          mask-composite: exclude;
+          opacity: 0;
+          transition: opacity 0.3s ease;
+        }
+        .wrap.busy .neural-glow { opacity: 1; animation: glowRotate 2s linear infinite; }
+        @keyframes glowRotate { 100% { filter: hue-rotate(360deg); } }
+
+        /* Tier Notice (Blurred Golden Style) */
         .notice {
           font-size: 11px;
-          color: #cfa93c;
-          background: #2a2410;
-          border: 1px solid #4a3f1a;
-          border-radius: 8px;
-          padding: 6px 8px;
-          margin-bottom: 6px;
+          color: rgba(230, 185, 90, 0.9);
+          background: rgba(230, 185, 90, 0.15); /* Translucent gold background */
+          backdrop-filter: blur(10px);
+          padding: 8px 12px;
           display: ${notice ? "block" : "none"};
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
           line-height: 1.4;
+          font-weight: 500;
         }
-        .box {
-          background: #1e1e1e;
-          border: 1px solid #3a3a3a;
-          border-radius: 10px;
-          box-shadow: 0 6px 24px rgba(0,0,0,0.35);
-          padding: 8px;
+
+        /* --- STATE 1: Input View --- */
+        .input-view {
           display: flex;
-          gap: 6px;
+          padding: 10px;
+          gap: 8px;
           align-items: center;
         }
         input {
           flex: 1;
-          padding: 7px 9px;
-          border-radius: 7px;
-          border: 1px solid #3a3a3a;
-          background: #2a2a2a;
-          color: #eaeaea;
-          font-size: 13px;
+          padding: 9px 12px;
+          border-radius: 10px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(28, 28, 30, 0.6); /* Translucent input background */
+          color: #f2f2f7;
+          font-size: 13.5px;
           outline: none;
+          transition: border-color 0.2s;
         }
-        button {
-          padding: 7px 12px;
-          border-radius: 7px;
+        input:focus { border-color: rgba(94, 92, 230, 0.8); } /* Subtle Apple Purple/Blue focus */
+
+        .submit-btn {
+          padding: 9px 16px;
+          border-radius: 10px;
           border: none;
-          background: #3a6df0;
+          background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%); /* Apple Purple gradient */
           color: white;
-          font-size: 13px;
+          font-size: 13.5px;
+          font-weight: 600;
           cursor: pointer;
-          white-space: nowrap;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+          transition: transform 0.1s;
         }
-        button:disabled { background: #444; cursor: not-allowed; }
-        button.secondary {
-          background: #333;
-        }
+        .submit-btn:hover { background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%); }
+        .submit-btn:active { transform: scale(0.97); }
+        .submit-btn:disabled { background: #3a3a3c; color: #888; cursor: not-allowed; }
+
         .status {
           font-size: 11px;
-          color: #e53935;
-          padding: 6px 4px 0;
+          color: #ff453a; /* Apple Red */
+          padding: 0 12px 10px;
           display: none;
+          font-weight: 500;
         }
-        .result {
-          display: none;
-          background: #1e1e1e;
-          border: 1px solid #3a3a3a;
-          border-radius: 10px;
-          box-shadow: 0 6px 24px rgba(0,0,0,0.35);
-          padding: 10px;
-          margin-top: 6px;
+
+        /* --- STATE 2: Result Preview View --- */
+        .result-view {
+          padding: 16px;
         }
         .result-text {
-          font-size: 13px;
-          color: #eaeaea;
+          font-size: 14.5px;
+          color: #f2f2f7;
+          line-height: 1.6;
+          max-height: 280px; 
+          overflow-y: auto;
           white-space: pre-wrap;
           word-wrap: break-word;
-          margin-bottom: 8px;
-          max-height: 140px;
-          overflow-y: auto;
+          margin-bottom: 16px;
+          padding-right: 8px;
         }
-        .result-actions {
+        /* SLEEK APPLE-LIKE SCROLLBAR */
+        .result-text::-webkit-scrollbar { width: 7px; }
+        .result-text::-webkit-scrollbar-track { background: transparent; }
+        .result-text::-webkit-scrollbar-thumb { background: rgba(120, 120, 128, 0.4); border-radius: 4px; }
+        .result-text::-webkit-scrollbar-thumb:hover { background: rgba(120, 120, 128, 0.6); }
+
+        .actions {
           display: flex;
           justify-content: flex-end;
-          gap: 6px;
-          margin-top: 6px;
+          gap: 10px;
         }
+        .btn {
+          padding: 8px 16px;
+          border-radius: 10px;
+          border: none;
+          font-size: 13.5px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.15s, transform 0.1s;
+        }
+        .btn-replace {
+          background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
+          color: white;
+          box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+        .btn-replace:hover { background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%); }
+        
+        .btn-copy, .btn-cancel {
+          background: rgba(120, 120, 128, 0.2); /* Apple Translucent Gray */
+          color: #f2f2f7;
+        }
+        .btn-copy:hover, .btn-cancel:hover { background: rgba(120, 120, 128, 0.3); }
+        .btn:active { transform: scale(0.97); }
+
+        .btn-success { background: #34c759 !important; } /* Green */
       </style>
+
       <div class="wrap">
+        <div class="neural-glow"></div>
         <div class="notice">${notice || ""}</div>
-        <div class="box">
-          <input type="text" placeholder="Tell Navigator how to edit this..." />
-          <button class="submit-btn">Go</button>
-        </div>
-        <div class="status"></div>
-        <div class="result">
-          <div class="result-text"></div>
-          <div class="result-actions">
-            <button class="secondary copy-btn">Copy</button>
-            <button class="secondary close-btn">Close</button>
+        <div class="content">
+          <div class="view input-view active">
+            <input type="text" placeholder="Describe edit..." />
+            <button class="submit-btn">Go</button>
+          </div>
+          
+          <div class="status"></div>
+          
+          <div class="view result-view">
+            <div class="result-text"></div>
+            <div class="actions">
+              <button class="btn btn-cancel">Cancel</button>
+              <button class="btn btn-copy">Copy</button>
+              <button class="btn btn-replace">Replace</button>
+            </div>
           </div>
         </div>
       </div>
     `;
 
+    // Elements
+    const hostEl = host;
+    const wrapEl = shadow.querySelector(".wrap");
+    const inputView = shadow.querySelector(".input-view");
+    const resultView = shadow.querySelector(".result-view");
     const input = shadow.querySelector("input");
     const submitBtn = shadow.querySelector(".submit-btn");
     const status = shadow.querySelector(".status");
-    const box = shadow.querySelector(".box");
-    const resultEl = shadow.querySelector(".result");
     const resultText = shadow.querySelector(".result-text");
-    const copyBtn = shadow.querySelector(".copy-btn");
-    const closeBtn = shadow.querySelector(".close-btn");
-    const wrapEl = shadow.querySelector(".wrap");
+    const replaceBtn = shadow.querySelector(".btn-replace");
+    const copyBtn = shadow.querySelector(".btn-copy");
+    const cancelBtn = shadow.querySelector(".btn-cancel");
 
-    // --- NEW: Helper to get live, updated bounds of the target ---
+    let pendingAiText = "";
+
+    // Helper for live bounds of target element
     function getFreshRect() {
       if (context.tier === "form" && context.element) {
         return context.element.getBoundingClientRect();
@@ -447,52 +560,100 @@
       return context.rect;
     }
 
-    // --- NEW: Smart collision positioning logic ---
+    // --- Smart Position Calculation ---
     function reposition() {
       const rect = getFreshRect();
       if (!rect) return;
 
-      // 1. Prevent Horizontal Clip (Right Edge)
-      const boxWidth = 340;
+      const boxWidth = 380;
       let left = rect.left;
       if (left + boxWidth > window.innerWidth) {
         left = window.innerWidth - boxWidth - 16;
       }
-      host.style.left = `${Math.max(8, left)}px`;
+      hostEl.style.left = `${Math.max(8, left)}px`;
 
-      // 2. Prevent Vertical Clip (Bottom Edge Check)
-      // Read the exact dynamic height of our wrapper box inside the shadow DOM
-      const boxHeight = wrapEl ? wrapEl.offsetHeight : 110;
+      const boxHeight = wrapEl.offsetHeight;
       const spaceBelow = window.innerHeight - rect.bottom;
 
-      // If space below is tighter than our box height, flip it over the top
       if (spaceBelow < boxHeight + 12 && rect.top > boxHeight + 12) {
-        host.style.top = `${rect.top - boxHeight - 8}px`;
+        hostEl.style.top = `${rect.top - boxHeight - 8}px`;
       } else {
-        host.style.top = `${rect.bottom + 6}px`;
+        hostEl.style.top = `${rect.bottom + 6}px`;
       }
     }
 
-    // Run the initial smart position calculation
+    // Perform initial repositioning
     reposition();
+
+    // Trigger entry animation
+    requestAnimationFrame(() => wrapEl.classList.add("ready"));
+
+    // --- Smooth Height Lerping Mechanism ---
+    function animateHeightChange(targetStateFn) {
+      // 1. Measure current exact height (starting point)
+      const startHeight = wrapEl.offsetHeight;
+
+      // 2. Add an explicit inline height to force a transition starting point
+      wrapEl.style.height = `${startHeight}px`;
+
+      // 3. Immediately apply the DOM changes (this happens invisibly behind the fixed height)
+      targetStateFn();
+
+      // 4. Force a browser layout recalculation (critical for next step)
+      // Reading offsetHeight triggers a synchronous reflow
+      const _forcedReflow = wrapEl.offsetHeight;
+
+      // 5. Measure the final desired scroll height of the new content
+      const endHeight = wrapEl.scrollHeight;
+
+      // 6. Set the height to the end point to trigger the CSS transition
+      wrapEl.style.height = `${endHeight}px`;
+
+      // 7. Cleanup after the animation finishes
+      function cleanupTransition() {
+        wrapEl.style.height = ""; // Restore to 'auto' so it can resize with text
+        wrapEl.removeEventListener("transitionend", cleanupTransition);
+        reposition(); // Perform collision check after new layout is stable
+      }
+      wrapEl.addEventListener("transitionend", cleanupTransition);
+    }
 
     function showError(msg) {
       status.textContent = msg;
       status.style.display = "block";
-      reposition(); // Re-calculate layout since error text expands the container height
+      animateHeightChange(() => { }); // Re-calc height with error text visible
     }
 
     function setBusy(isBusy) {
       submitBtn.disabled = isBusy;
       input.disabled = isBusy;
       submitBtn.textContent = isBusy ? "..." : "Go";
+
+      // Toggle neural glow/border shaders
+      if (isBusy) {
+        wrapEl.classList.add("busy");
+      } else {
+        wrapEl.classList.remove("busy");
+      }
     }
 
-    function showResult(text) {
-      box.style.display = "none";
-      resultText.textContent = text;
-      resultEl.style.display = "block";
-      reposition(); // Re-calculate layout since the result menu has a unique height
+    // Morph the window from Input to Preview mode with animation
+    function showPreviewMode(text) {
+      pendingAiText = text;
+
+      // Use the smooth lerp engine
+      animateHeightChange(() => {
+        // Toggle active views
+        inputView.classList.remove("active");
+        status.style.display = "none";
+
+        resultText.textContent = text;
+        resultView.classList.add("active");
+
+        if (context.tier === "readonly") {
+          replaceBtn.style.display = "none";
+        }
+      });
     }
 
     function submit() {
@@ -503,11 +664,7 @@
       status.style.display = "none";
 
       chrome.runtime.sendMessage(
-        {
-          type: EDIT_REQUEST_MESSAGE,
-          selected_text: context.text,
-          instruction,
-        },
+        { type: "navigator-edit-selection-request", selected_text: context.text, instruction },
         (response) => {
           setBusy(false);
 
@@ -520,62 +677,54 @@
             return;
           }
 
-          // --- Added context.tier === "rich-text" ---
-          if (context.tier === "form" || context.tier === "contenteditable" || context.tier === "rich-text") {
-            applyEdit(context, response.edited_text);
-            closeActiveBox();
-          } else {
-            showResult(response.edited_text);
-          }
+          showPreviewMode(response.edited_text);
         }
       );
     }
 
     submitBtn.addEventListener("click", submit);
 
-    // 1. Stop propagation on keydown
     input.addEventListener("keydown", (e) => {
-      e.stopPropagation(); // Stops GitHub from seeing the event
+      e.stopPropagation();
       if (e.key === "Enter") submit();
       if (e.key === "Escape") closeActiveBox();
     });
-
-    // 2. Also stop keyup and keypress, just in case a site's hotkeys 
-    // are bound to those instead of keydown.
     input.addEventListener("keyup", (e) => e.stopPropagation());
     input.addEventListener("keypress", (e) => e.stopPropagation());
 
-    copyBtn.addEventListener("click", () => {
-      navigator.clipboard?.writeText(resultText.textContent || "").catch(() => { });
-      copyBtn.textContent = "Copied";
-      setTimeout(() => { copyBtn.textContent = "Copy"; }, 1200);
+    replaceBtn.addEventListener("click", () => {
+      if (pendingAiText) {
+        applyEdit(context, pendingAiText);
+      }
+      closeActiveBox();
     });
-    closeBtn.addEventListener("click", closeActiveBox);
 
-    const onKeydown = (e) => {
-      if (e.key === "Escape") closeActiveBox();
-    };
-    const onOutsideClick = (e) => {
-      if (!host.contains(e.target)) closeActiveBox();
-    };
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard?.writeText(pendingAiText).catch(() => { });
+      copyBtn.textContent = "Copied";
+      copyBtn.classList.add("btn-success"); // Apply Green Success Gradient
+      setTimeout(() => {
+        copyBtn.textContent = "Copy";
+        copyBtn.classList.remove("btn-success");
+      }, 1200);
+    });
 
-    // --- Live Scroll tracking handler ---
-    const handleScroll = () => {
-      reposition();
-    };
+    cancelBtn.addEventListener("click", closeActiveBox);
 
-    // true setting uses the capture phase, tracking scrolls on internal DOM containers too
+    const onKeydown = (e) => { if (e.key === "Escape") closeActiveBox(); };
+    const onOutsideClick = (e) => { if (!hostEl.contains(e.target)) closeActiveBox(); };
+
+    const handleScroll = () => reposition();
     window.addEventListener("scroll", handleScroll, true);
 
     document.addEventListener("keydown", onKeydown, true);
     setTimeout(() => document.addEventListener("mousedown", onOutsideClick, true), 0);
 
-    activeBox = { host, onKeydown, onOutsideClick, onScroll: handleScroll };
+    activeBox = { host: hostEl, onKeydown, onOutsideClick, onScroll: handleScroll };
     input.focus();
   }
 
   // ── Entry point: background.js relays the context-menu click here ─────
-
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type !== OPEN_BOX_MESSAGE) return;
 
