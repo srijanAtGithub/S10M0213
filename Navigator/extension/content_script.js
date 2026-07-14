@@ -387,21 +387,62 @@
           pointer-events: auto; /* Enable interaction */
         }
 
-        /* --- Neural Glow Edge (Active state glow) --- */
+        /* --- Neural Glow Edge (Rotating Inner Border) --- */
         .wrap.busy .neural-glow {
           position: absolute;
           top: 0; left: 0; right: 0; bottom: 0;
           border-radius: 18px;
           padding: 2px;
-          background: linear-gradient(135deg, rgba(94, 92, 230, 0.6), rgba(130, 240, 255, 0.6), rgba(94, 92, 230, 0.6));
+          background: linear-gradient(135deg, rgba(94, 92, 230, 0.8), rgba(130, 240, 255, 0.9), rgba(94, 92, 230, 0.8));
           -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
           -webkit-mask-composite: destination-out;
           mask-composite: exclude;
           opacity: 0;
           transition: opacity 0.3s ease;
         }
-        .wrap.busy .neural-glow { opacity: 1; animation: glowRotate 2s linear infinite; }
-        @keyframes glowRotate { 100% { filter: hue-rotate(360deg); } }
+        .wrap.busy .neural-glow { 
+          opacity: 1; 
+          animation: glowRotate 2s linear infinite; 
+        }
+
+        /* --- Outer Radiant Glow Backdrop (Escapes overflow: hidden) --- */
+        .glow-backdrop {
+          position: absolute;
+          top: 0; left: 0; right: 0; bottom: 0;
+          border-radius: 18px;
+          pointer-events: none; /* Let clicks pass straight through */
+          z-index: -1; /* Render behind the main panel */
+          opacity: 0;
+          transition: opacity 0.4s ease;
+        }
+
+        /* When the panel is busy, ignite the backdrop with synced rotation and breathing */
+        .wrap.busy ~ .glow-backdrop {
+          opacity: 1;
+          animation: 
+            glowRotate 2s linear infinite, 
+            radiantPulse 1.5s ease-in-out infinite alternate;
+        }
+
+        @keyframes glowRotate { 
+          100% { filter: hue-rotate(360deg); } 
+        }
+
+        /* Subtle, elegant, close-to-the-border glow */
+        @keyframes radiantPulse {
+          0% {
+            box-shadow: 
+              0 0 15px rgba(94, 92, 230, 0.4),      /* Tight inner purple */
+              0 0 30px rgba(130, 240, 255, 0.2),     /* Soft middle cyan */
+              0 0 50px rgba(94, 92, 230, 0.08);     /* Barely visible outer ambient */
+          }
+          100% {
+            box-shadow: 
+              0 0 25px rgba(94, 92, 230, 0.6),      /* Tight hot purple */
+              0 0 45px rgba(130, 240, 255, 0.35),    /* Medium cyan bloom */
+              0 0 75px rgba(94, 92, 230, 0.15);     /* Gentle outer glow */
+          }
+        }
 
         /* Tier Notice (Blurred Golden Style) */
         .notice {
@@ -561,6 +602,8 @@
           </div>
         </div>
       </div>
+
+      <div class="glow-backdrop"></div>
     `;
 
     // Elements
