@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+langgraph>=0.2
+langchain-core
+structlog
+websockets

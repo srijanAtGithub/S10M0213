@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Sicily Navigator</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, sans-serif;
+    }
+
+    body {
+      width: 100%;
+      height: 100vh;
+      margin: 0;
+      background: #1c1c1e;
+      overflow: hidden;
+    }
+
+    /* --- Premium Interface Wrapper --- */
+    .wrap {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: rgba(44, 44, 46, 0.95);
+      /* Premium Dark Mode Gray */
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+
+      /* Subtle Inner Frame Definition */
+      box-shadow: inset 0 0 1px rgba(255, 255, 255, 0.1);
+
+      /* Entry Animation States */
+      opacity: 0;
+      transform: scale(0.98);
+      transition: opacity 0.3s ease-out, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .wrap.ready {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    /* --- Header Layout --- */
+    #header {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      font-weight: 600;
+      font-size: 13.5px;
+      color: #f2f2f7;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    #header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* --- Control Elements & Buttons --- */
+    #clear-btn {
+      padding: 5px 10px;
+      border-radius: 8px;
+      border: none;
+      background: rgba(120, 120, 128, 0.2);
+      /* Apple Translucent Gray */
+      color: #f2f2f7;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    #clear-btn:hover {
+      background: rgba(120, 120, 128, 0.3);
+    }
+
+    #clear-btn:active {
+      transform: scale(0.96);
+    }
+
+    /* --- Status Indication --- */
+    #status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #8e8e93;
+      display: inline-block;
+      transition: background-color 0.3s ease;
+    }
+
+    #status-dot.connected {
+      background: #34c759;
+      /* Apple Green */
+      box-shadow: 0 0 8px rgba(52, 199, 89, 0.4);
+    }
+
+    #status-dot.disconnected {
+      background: #ff453a;
+      /* Apple Red */
+      box-shadow: 0 0 8px rgba(255, 69, 58, 0.4);
+    }
+
+    /* --- Messages Thread --- */
+    #messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Sleek Apple-like Scrollbar Setup */
+    #messages::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #messages::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #messages::-webkit-scrollbar-thumb {
+      background: rgba(120, 120, 128, 0.3);
+      border-radius: 4px;
+    }
+
+    #messages::-webkit-scrollbar-thumb:hover {
+      background: rgba(120, 120, 128, 0.5);
+    }
+
+    /* --- Chat Bubbles --- */
+    .msg {
+      max-width: 85%;
+      padding: 9px 13px;
+      border-radius: 14px;
+      font-size: 13.5px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      transition: transform 0.15s ease-out;
+    }
+
+    .msg.user {
+      align-self: flex-end;
+      background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
+      /* Apple Purple gradient */
+      color: white;
+      border-bottom-right-radius: 4px;
+      box-shadow: 0 2px 8px rgba(94, 92, 230, 0.2);
+    }
+
+    .msg.ai {
+      align-self: flex-start;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #f2f2f7;
+      border-bottom-left-radius: 4px;
+    }
+
+    .msg.system {
+      align-self: center;
+      max-width: 95%;
+      font-size: 11px;
+      font-weight: 500;
+      color: rgba(230, 185, 90, 0.95);
+      /* Blended Golden Notice */
+      background: rgba(230, 185, 90, 0.12);
+      border: 1px solid rgba(230, 185, 90, 0.15);
+      padding: 6px 12px;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    /* --- Action Row & Inputs --- */
+    #input-row {
+      display: flex;
+      padding: 10px 12px 14px 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      gap: 8px;
+      align-items: center;
+      background: rgba(36, 36, 38, 0.5);
+    }
+
+    #input-box {
+      flex: 1;
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(28, 28, 30, 0.6);
+      /* Translucent input */
+      color: #f2f2f7;
+      font-size: 13.5px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    #input-box:focus {
+      border-color: rgba(94, 92, 230, 0.8);
+      /* Apple Purple Glow */
+      box-shadow: 0 0 10px rgba(94, 92, 230, 0.15);
+    }
+
+    #send-btn {
+      padding: 9px 15px;
+      border-radius: 10px;
+      border: none;
+      background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
+      color: white;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    #send-btn:hover:not(:disabled) {
+      background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%);
+    }
+
+    #send-btn:active:not(:disabled) {
+      transform: scale(0.96);
+    }
+
+    #send-btn:disabled {
+      background: #3a3a3c;
+      color: #8e8e93;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Added the structural wrap element to isolate entry styles and animation context -->
+  <div class="wrap" id="app-wrap">
+    <div id="header">
+      <span>Sicily Navigator</span>
+      <div id="header-right">
+        <button id="clear-btn" title="Clear this tab's conversation">Clear</button>
+        <span id="status-dot"></span>
+      </div>
+    </div>
+
+    <div id="messages"></div>
+
+    <div id="input-row">
+      <input id="input-box" type="text" placeholder="Type anything..." autocomplete="off" />
+      <button id="send-btn">Send</button>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+
+</html>

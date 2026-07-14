@@ -16,10 +16,10 @@ log = structlog.get_logger()
 import tiktoken
 from langchain_core.messages import (SystemMessage, HumanMessage, AIMessage, ToolMessage)
 
-from memory_and_context import get_system_message, get_relevant_preferences
-from tool_manager import ToolManager
+from Agent.memory_and_context import get_system_message, get_relevant_preferences
+from Agent.tool_manager import ToolManager
 import configuration
-from session_store import DB_PATH
+from Agent.session_store import DB_PATH
 
 # State Class
 class AgentState(TypedDict):
