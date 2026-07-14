@@ -21,13 +21,13 @@ from fastapi import FastAPI
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
-from telegram_commands import setup_command_handlers, setup_bot_commands
-import agent as agent_module
-from agent import initialize_agent, send
+from Agent.telegram_commands import setup_command_handlers, setup_bot_commands
+import Agent.agent as agent_module
+from Agent.agent import initialize_agent, send
 from configuration import TOOL_LABELS, get_transcriber
-from memory_and_context import run_evaluator
+from Agent.memory_and_context import run_evaluator
 from Recurring_Tasks.recurring_tasks import start_recurring_tasks, set_dispatch
-from session_store import init_db, load_all_sessions, load_session, save_session, delete_session
+from Agent.session_store import init_db, load_all_sessions, load_session, save_session, delete_session
 
 SICILY_HOME = Path.home() / ".sicily"
 

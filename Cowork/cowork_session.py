@@ -52,7 +52,7 @@ import configuration
 # Initialize the rich console for styling
 console = Console()
 from Cowork.cowork_tools import LOCAL_TOOLS, set_sandbox_root, get_friendly_tool_message
-from agent import maybe_summarize
+from Agent.agent import maybe_summarize
 
 log = structlog.get_logger()
 
