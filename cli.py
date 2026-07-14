@@ -2,6 +2,10 @@ import click
 import shutil
 import json
 import subprocess
+import sys
+import os
+import signal
+import time
 from pathlib import Path
 
 from configuration import REQUIRED_KEYS
@@ -157,25 +161,149 @@ def start():
     asyncio.run(run_local_session())
 
 
-@main_cli.command()
-def navigator():
-    """Start the Sicily Navigator backend for the browser extension."""
-    # Only require the OpenAI API key for this specific tool
-    ensure_initialized(required_keys=["OPENAI_API_KEY"])
-    
+NAVIGATOR_PID_FILE = SICILY_HOME / "navigator.pid"
+NAVIGATOR_LOG_FILE = SICILY_HOME / "navigator.log"
+NAVIGATOR_HOST = "127.0.0.1"
+NAVIGATOR_PORT = 8765
+
+
+def _navigator_pid_running(pid: int) -> bool:
+    """Check whether a process with this PID is alive, cross-platform."""
+    if pid <= 0:
+        return False
+    try:
+        if sys.platform == "win32":
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}"],
+                capture_output=True, text=True
+            )
+            return str(pid) in result.stdout
+        else:
+            os.kill(pid, 0)
+            return True
+    except (OSError, ProcessLookupError, PermissionError):
+        return False
+    except Exception:
+        return False
+
+
+def _read_navigator_pid():
+    if not NAVIGATOR_PID_FILE.exists():
+        return None
+    try:
+        return int(NAVIGATOR_PID_FILE.read_text().strip())
+    except (ValueError, OSError):
+        return None
+
+
+def _run_navigator_server():
+    """Runs uvicorn in the foreground. Only called inside the detached child process."""
     import uvicorn
-    import click
-    
-    click.secho("\n  Starting Sicily Navigator on http://127.0.0.1:8765", fg="green", bold=True)
-    click.echo("  Waiting for extension requests...\n")
-    
-    # Run uvicorn programmatically (reload=False is safer/cleaner for production)
     uvicorn.run(
-        "Navigator.navigator_bridge:app", 
-        host="127.0.0.1", 
-        port=8765, 
-        log_level="info"
+        "Navigator.navigator_bridge:app",
+        host=NAVIGATOR_HOST,
+        port=NAVIGATOR_PORT,
+        log_level="info",
     )
+
+
+@main_cli.command(context_settings={"ignore_unknown_options": True})
+@click.option("--start", "do_start", is_flag=True, help="Start the Navigator backend in the background.")
+@click.option("--stop", "do_stop", is_flag=True, help="Stop the running Navigator backend.")
+@click.option("--status", "do_status", is_flag=True, help="Check whether the Navigator backend is running.")
+@click.option("--foreground", "_foreground", is_flag=True, hidden=True,
+              help="Internal: run the server in this process (used by --start's child process).")
+def navigator(do_start, do_stop, do_status, _foreground):
+    """Manage the Sicily Navigator backend for the browser extension."""
+
+    # Internal re-entry point: the detached background process calls itself
+    # with this hidden flag so uvicorn actually runs somewhere.
+    if _foreground:
+        ensure_initialized(required_keys=["OPENAI_API_KEY"])
+        _run_navigator_server()
+        return
+
+    flags_set = sum([do_start, do_stop, do_status])
+    if flags_set == 0:
+        click.secho("  Specify one of: --start, --stop, --status", fg="yellow", bold=True)
+        click.echo("  e.g.  sicily navigator --start")
+        return
+    if flags_set > 1:
+        click.secho("  Please pass only one of --start / --stop / --status at a time.", fg="red")
+        raise click.Abort()
+
+    if do_status:
+        pid = _read_navigator_pid()
+        if pid and _navigator_pid_running(pid):
+            click.secho(f"  ● Navigator is running (pid {pid}) on http://{NAVIGATOR_HOST}:{NAVIGATOR_PORT}", fg="green", bold=True)
+        else:
+            click.secho("  ○ Navigator is not running", fg="yellow")
+        return
+
+    if do_stop:
+        pid = _read_navigator_pid()
+        if not pid or not _navigator_pid_running(pid):
+            click.echo("  Navigator is not running.")
+            if NAVIGATOR_PID_FILE.exists():
+                NAVIGATOR_PID_FILE.unlink()
+            return
+        try:
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+            else:
+                os.kill(pid, signal.SIGTERM)
+            click.secho(f"  ✓ Stopped Navigator (pid {pid})", fg="green", bold=True)
+        except Exception as e:
+            click.secho(f"  ✗ Could not stop Navigator: {e}", fg="red")
+        finally:
+            if NAVIGATOR_PID_FILE.exists():
+                NAVIGATOR_PID_FILE.unlink()
+        return
+
+    if do_start:
+        ensure_initialized(required_keys=["OPENAI_API_KEY"])
+
+        existing_pid = _read_navigator_pid()
+        if existing_pid and _navigator_pid_running(existing_pid):
+            click.secho(f"  Navigator is already running (pid {existing_pid}).", fg="yellow")
+            click.echo(f"  http://{NAVIGATOR_HOST}:{NAVIGATOR_PORT}")
+            return
+
+        SICILY_HOME.mkdir(exist_ok=True)
+        log_fh = open(NAVIGATOR_LOG_FILE, "a")
+
+        # Re-invoke this same CLI entry point with the hidden --foreground flag,
+        # fully detached so it survives the parent terminal closing.
+        # Uses the installed 'sicily' console-script so this works regardless
+        # of whether the user installed via `uv tool install` or pip.
+        sicily_bin = shutil.which("sicily") or sys.argv[0]
+        cmd = [sicily_bin, "navigator", "--foreground"]
+
+        popen_kwargs = dict(stdout=log_fh, stderr=log_fh, stdin=subprocess.DEVNULL)
+        if sys.platform == "win32":
+            popen_kwargs["creationflags"] = (
+                subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+        else:
+            popen_kwargs["start_new_session"] = True  # detach from controlling terminal
+
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+        NAVIGATOR_PID_FILE.write_text(str(proc.pid))
+
+        # Brief liveness check so we can report a clear failure instead of a false "started".
+        time.sleep(0.75)
+        if not _navigator_pid_running(proc.pid):
+            click.secho("  ✗ Navigator failed to start. Check the log:", fg="red", bold=True)
+            click.echo(f"    {NAVIGATOR_LOG_FILE}")
+            if NAVIGATOR_PID_FILE.exists():
+                NAVIGATOR_PID_FILE.unlink()
+            raise click.Abort()
+
+        click.secho(f"\n  ✓ Navigator started in background (pid {proc.pid})", fg="green", bold=True)
+        click.echo(f"  http://{NAVIGATOR_HOST}:{NAVIGATOR_PORT}")
+        click.echo(f"  Logs: {NAVIGATOR_LOG_FILE}")
+        click.echo("  Check status:  sicily navigator --status")
+        click.echo("  Stop:          sicily navigator --stop\n")
 
 
 @main_cli.command(name="reset")
@@ -407,7 +535,8 @@ def help():
     click.echo("  config        - Open the config folder")
     click.echo("  run           - Run the agent")
     click.echo("  start         - Start a local terminal session")
-    click.echo("  navigator     - Start the browser extension backend")
+    click.echo("  navigator     - Manage the browser extension backend")
+    click.echo("                    --start / --stop / --status")
     click.echo("  usage         - Show token usage and estimated cost")
     click.echo("  update        - Update Sicily to the latest version")
     click.echo("  reset         - Reset all config and indexes back to default")
