@@ -474,12 +474,12 @@
         .wrap {
           width: 380px;
           border-radius: 18px; /* Classic smooth Apple corner */
-          border: 1px solid rgba(255, 255, 255, 0.12); /* Subtle edge definition */
+          border: 1px solid rgba(255, 255, 255, 0.18); /* Subtle edge definition */
           
           /* Glassmorphism Effect */
-          backdrop-filter: blur(35px); 
-          -webkit-backdrop-filter: blur(35px); /* Safari support */
-          background: rgba(44, 44, 46, 0.85); /* Premium Dark Mode Gray */
+          backdrop-filter: blur(30px); 
+          -webkit-backdrop-filter: blur(30px); /* Safari support */
+          background: rgba(25, 25, 26, 0.35); /* Premium Dark Mode Gray */
           
           /* The "Shader" / Glowing Border Effect */
           box-shadow: 
@@ -609,53 +609,70 @@
           max-height: 160px;
           padding: 8px 12px;
           border-radius: 10px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          background: rgba(28, 28, 30, 0.6);
+          
+          /* Removed standard border, replaced with a near-invisible 4% opacity lining */
+          border: 1px solid rgba(255, 255, 255, 0.04); 
+          background: rgba(10, 10, 12, 0.45); /* Seamlessly integrates with the glass base */
+          
           color: #f2f2f7;
           font-size: 13.5px;
           outline: none;
-          transition: border-color 0.2s;
           resize: none;
           font-family: inherit;
           box-sizing: border-box;
           line-height: 1.5;
           overflow-y: auto;
+          
+          /* Added smooth ease-out for a gradual glow transition */
+          transition: border-color 0.25s ease-out, box-shadow 0.25s ease-out;
         }
-        textarea:focus { border-color: rgba(94, 92, 230, 0.8); }
+
+        textarea:focus { 
+          /* Ultra-fine pink boundary line */
+          border-color: rgba(249, 81, 165, 0.3); 
+          
+          /* Fully covers the bounding box with a soft pink ambient glow */
+          box-shadow: 0 0 14px rgba(255, 105, 180, 0.25); 
+        }
 
         .action-btns {
           display: flex;
           gap: 6px;
           align-self: flex-end; /* Anchors the buttons to the bottom right under the text */
         }
-        
-        .submit-btn {
+
+        /* --- Action & Submission Buttons (Uniform Glassmorphism) --- */
+        .submit-btn, .btn {
           padding: 9px 14px;
           border-radius: 10px;
-          border: none;
+          border: 1px solid rgba(255, 255, 255, 0.08); /* Crisp visible border */
           font-size: 13.5px;
           font-weight: 600;
           cursor: pointer;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-          transition: transform 0.1s, background 0.15s;
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          transition: transform 0.1s, background-color 0.15s;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
-        
-        /* The Ask Button - Translucent Gray */
+
+        /* The Ask Button - Ultra Translucent Gray */
         .btn-ask {
-          background: rgba(120, 120, 128, 0.2);
+          background: rgba(255, 255, 255, 0.06);
           color: #f2f2f7;
         }
-        .btn-ask:hover:not(:disabled) { background: rgba(120, 120, 128, 0.4); }
-        
-        /* The Edit Button - Apple Purple */
-        .btn-edit {
-          background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
-          color: white;
+        .btn-ask:hover:not(:disabled) { 
+          background: rgba(255, 255, 255, 0.12);
         }
-        .btn-edit:hover:not(:disabled) { background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%); }
-        
-        .submit-btn:active:not(:disabled) { transform: scale(0.96); }
-        .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* The Edit & Replace Buttons - Subtle Translucent Purple */
+        .btn-edit, .btn-replace {
+          background: rgba(255, 255, 255, 0.06);
+          color: #f2f2f7;
+          border-color: rgba(94, 92, 230, 0.3);
+        }
+        .btn-edit:hover:not(:disabled), .btn-replace:hover { 
+          background: rgba(94, 92, 230, 0.28);
+        }
 
         .status {
           font-size: 11px;
@@ -691,30 +708,20 @@
           justify-content: flex-end;
           gap: 10px;
         }
-        .btn {
-          padding: 8px 16px;
-          border-radius: 10px;
-          border: none;
-          font-size: 13.5px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: background 0.15s, transform 0.1s;
-        }
-        .btn-replace {
-          background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
-          color: white;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-        }
-        .btn-replace:hover { background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%); }
-        
+
+        /* The Copy & Cancel Buttons - Standard Translucent Gray */
         .btn-copy, .btn-cancel {
-          background: rgba(120, 120, 128, 0.2); /* Apple Translucent Gray */
+          background: rgba(120, 120, 128, 0.2);
           color: #f2f2f7;
         }
-        .btn-copy:hover, .btn-cancel:hover { background: rgba(120, 120, 128, 0.3); }
-        .btn:active { transform: scale(0.97); }
+        .btn-copy:hover, .btn-cancel:hover { 
+          background: rgba(120, 120, 128, 0.3); 
+        }
 
-        .btn-success { background: #34c759 !important; } /* Green */
+        /* Global Button Interactions */
+        .submit-btn:active:not(:disabled), .btn:active { transform: scale(0.96); }
+        .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-success { background: #34c759 !important; border-color: transparent !important; }
       </style>
 
       <div class="wrap">
