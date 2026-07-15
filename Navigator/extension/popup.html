@@ -14,33 +14,82 @@
       width: 100%;
       height: 100vh;
       margin: 0;
-      background: #1c1c1e;
+      background: transparent;
       overflow: hidden;
     }
 
-    /* --- Premium Interface Wrapper --- */
+    /* --- Main Premium Container (Apple Style) --- */
     .wrap {
       width: 100%;
       height: 100%;
+      border-radius: 0;
+      /* Side panel has no rounded corners typically, but we can keep subtle */
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      /* Subtle edge definition */
+
+      /* Glassmorphism Effect */
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      /* Safari support */
+      background: rgba(0, 0, 0, 0.95);
+      /* Premium Dark Mode Gray, more opaque for side panel */
+
+      /* The "Shader" / Glowing Border Effect */
+      box-shadow:
+        0 12px 40px rgba(0, 0, 0, 0.45),
+        /* Depth Shadow */
+        0 0 20px rgba(94, 92, 230, 0.2),
+        /* Subtle Inner Blue Glow */
+        inset 0 0 1px rgba(255, 255, 255, 0.1);
+      /* Crisp Inner Edge */
+
+      overflow: hidden;
+      /* Contains the height animation */
+      position: relative;
+      /* For the neural glow overlays */
+      opacity: 0;
+      transform: translateY(10px) scale(0.98);
+      /* Start state for entry animation */
+      transition:
+        opacity 0.3s ease-out,
+        transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       display: flex;
       flex-direction: column;
-      background: rgba(44, 44, 46, 0.95);
-      /* Premium Dark Mode Gray */
-      backdrop-filter: blur(25px);
-      -webkit-backdrop-filter: blur(25px);
-
-      /* Subtle Inner Frame Definition */
-      box-shadow: inset 0 0 1px rgba(255, 255, 255, 0.1);
-
-      /* Entry Animation States */
-      opacity: 0;
-      transform: scale(0.98);
-      transition: opacity 0.3s ease-out, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
+    /* Animate in the window */
     .wrap.ready {
       opacity: 1;
-      transform: scale(1);
+      transform: translateY(0) scale(1);
+    }
+
+    /* --- Neural Glow Edge --- */
+    .neural-glow {
+      position: absolute;
+      inset: 0;
+      border-radius: 0;
+      pointer-events: none;
+      opacity: 0;
+      background: radial-gradient(circle at 20% 30%, rgba(94, 92, 230, 0.25), transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(249, 81, 165, 0.25), transparent 50%);
+      mix-blend-mode: screen;
+      transition: opacity 0.5s ease;
+      z-index: 1;
+    }
+
+    .wrap.busy .neural-glow {
+      opacity: 1;
+      animation: neuralPulse 3s ease-in-out infinite alternate;
+    }
+
+    @keyframes neuralPulse {
+      0% {
+        filter: hue-rotate(0deg);
+      }
+
+      100% {
+        filter: hue-rotate(90deg);
+      }
     }
 
     /* --- Header Layout --- */
@@ -53,6 +102,8 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      position: relative;
+      z-index: 2;
     }
 
     #header-right {
@@ -65,18 +116,18 @@
     #clear-btn {
       padding: 5px 10px;
       border-radius: 8px;
-      border: none;
-      background: rgba(120, 120, 128, 0.2);
-      /* Apple Translucent Gray */
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.06);
       color: #f2f2f7;
       font-size: 11.5px;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.15s, transform 0.1s;
+      backdrop-filter: blur(20px);
     }
 
     #clear-btn:hover {
-      background: rgba(120, 120, 128, 0.3);
+      background: rgba(94, 92, 230, 0.28);
     }
 
     #clear-btn:active {
@@ -95,13 +146,11 @@
 
     #status-dot.connected {
       background: #34c759;
-      /* Apple Green */
       box-shadow: 0 0 8px rgba(52, 199, 89, 0.4);
     }
 
     #status-dot.disconnected {
       background: #ff453a;
-      /* Apple Red */
       box-shadow: 0 0 8px rgba(255, 69, 58, 0.4);
     }
 
@@ -113,11 +162,13 @@
       display: flex;
       flex-direction: column;
       gap: 10px;
+      position: relative;
+      z-index: 2;
     }
 
     /* Sleek Apple-like Scrollbar Setup */
     #messages::-webkit-scrollbar {
-      width: 6px;
+      width: 7px;
     }
 
     #messages::-webkit-scrollbar-track {
@@ -125,12 +176,12 @@
     }
 
     #messages::-webkit-scrollbar-thumb {
-      background: rgba(120, 120, 128, 0.3);
+      background: rgba(120, 120, 128, 0.4);
       border-radius: 4px;
     }
 
     #messages::-webkit-scrollbar-thumb:hover {
-      background: rgba(120, 120, 128, 0.5);
+      background: rgba(120, 120, 128, 0.6);
     }
 
     /* --- Chat Bubbles --- */
@@ -143,12 +194,13 @@
       white-space: pre-wrap;
       word-wrap: break-word;
       transition: transform 0.15s ease-out;
+      position: relative;
+      z-index: 2;
     }
 
     .msg.user {
       align-self: flex-end;
       background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
-      /* Apple Purple gradient */
       color: white;
       border-bottom-right-radius: 4px;
       box-shadow: 0 2px 8px rgba(94, 92, 230, 0.2);
@@ -156,8 +208,8 @@
 
     .msg.ai {
       align-self: flex-start;
-      background: rgba(255, 255, 255, 0.06);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       color: #f2f2f7;
       border-bottom-left-radius: 4px;
     }
@@ -168,7 +220,6 @@
       font-size: 11px;
       font-weight: 500;
       color: rgba(230, 185, 90, 0.95);
-      /* Blended Golden Notice */
       background: rgba(230, 185, 90, 0.12);
       border: 1px solid rgba(230, 185, 90, 0.15);
       padding: 6px 12px;
@@ -180,46 +231,48 @@
     #input-row {
       display: flex;
       padding: 10px 12px 14px 12px;
-      border-top: 1px solid rgba(255, 255, 255, 0.08);
       gap: 8px;
       align-items: center;
-      background: rgba(36, 36, 38, 0.5);
+      background: rgba(10, 10, 12, 0.6);
+      position: relative;
+      z-index: 2;
     }
 
     #input-box {
       flex: 1;
       padding: 9px 12px;
       border-radius: 10px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      background: rgba(28, 28, 30, 0.6);
-      /* Translucent input */
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      background: rgba(10, 10, 12, 0.45);
       color: #f2f2f7;
       font-size: 13.5px;
       outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      transition: border-color 0.25s ease-out, box-shadow 0.25s ease-out;
+      resize: none;
+      line-height: 1.5;
     }
 
     #input-box:focus {
-      border-color: rgba(94, 92, 230, 0.8);
-      /* Apple Purple Glow */
-      box-shadow: 0 0 10px rgba(94, 92, 230, 0.15);
+      border-color: rgba(249, 81, 165, 0.3);
+      box-shadow: 0 0 14px rgba(255, 105, 180, 0.25);
     }
 
     #send-btn {
       padding: 9px 15px;
       border-radius: 10px;
-      border: none;
-      background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
-      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.06);
+      color: #f2f2f7;
       font-size: 13.5px;
       font-weight: 600;
       cursor: pointer;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-      transition: background 0.15s, transform 0.1s;
+      backdrop-filter: blur(20px);
+      transition: transform 0.1s, background-color 0.15s;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     }
 
     #send-btn:hover:not(:disabled) {
-      background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%);
+      background: rgba(94, 92, 230, 0.28);
     }
 
     #send-btn:active:not(:disabled) {
@@ -227,17 +280,43 @@
     }
 
     #send-btn:disabled {
-      background: #3a3a3c;
-      color: #8e8e93;
+      opacity: 0.4;
       cursor: not-allowed;
-      box-shadow: none;
+    }
+
+    /* Scanning scanline for busy state */
+    .wrap::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, transparent, rgba(130, 240, 255, 0.15), transparent);
+      transform: translateY(-100%);
+      pointer-events: none;
+      z-index: 5;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .wrap.busy::before {
+      opacity: 1;
+      animation: scanLine 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    @keyframes scanLine {
+      0% {
+        transform: translateY(-100%);
+      }
+
+      100% {
+        transform: translateY(100%);
+      }
     }
   </style>
 </head>
 
 <body>
-  <!-- Added the structural wrap element to isolate entry styles and animation context -->
   <div class="wrap" id="app-wrap">
+    <div class="neural-glow"></div>
     <div id="header">
       <span>Sicily Navigator</span>
       <div id="header-right">

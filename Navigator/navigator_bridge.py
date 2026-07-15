@@ -177,7 +177,7 @@ class EditResult(BaseModel):
 import uuid
 
 async def call_edit_model(selected_text: str, instruction: str, action_type: str = "edit", surrounding_context: str = "") -> str:
-    llm = configuration.get_intent_llm(EditResult)
+    llm = configuration.get_reading_tool_llm(EditResult)
     
     # Branch the persona based on the button clicked
     if action_type == "ask":

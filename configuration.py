@@ -102,9 +102,18 @@ def get_eval_llm():
 def get_summarizer_llm():
     return ChatOpenAI(model="gpt-4o-mini", temperature=0)
 
+
 def get_transcriber() -> AsyncOpenAI:
     """Returns an AsyncOpenAI client for voice transcription via gpt-4o-mini-transcribe."""
     return AsyncOpenAI()
+
+
+def get_reading_tool_llm(schema):
+    return ChatOpenAI(model="gpt-5.4-nano").with_structured_output(schema, include_raw=False)
+
+
+def get_writing_tool_llm(schema):
+    return ChatOpenAI(model="gpt-5.4-nano").with_structured_output(schema, include_raw=False)
 
 
 TOOL_LABELS = {
