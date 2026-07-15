@@ -116,6 +116,123 @@
     return null;
   }
 
+  // ── Word-boundary snapping ──────────────────────────────────────────
+  // Users routinely drag-select from mid-word to mid-word. If we edit
+  // exactly that ragged span, the leftover fragments ("e" + "ional" from
+  // a selection that only grabbed "xcept" out of "exceptional") get left
+  // behind on either side of the replacement. Snap both ends outward to
+  // the nearest whole-word boundary before doing anything else with the
+  // range, so what we read, highlight, and eventually replace is always
+  // whole words — never fragments.
+  const wordSegmenter = (typeof Intl !== "undefined" && Intl.Segmenter)
+    ? new Intl.Segmenter(undefined, { granularity: "word" })
+    : null;
+
+  function isWordLike(segment) {
+    // Intl.Segmenter marks each segment isWordLike: true for actual words,
+    // false for whitespace/punctuation between them — exactly the split we
+    // want, and it's Unicode/locale-aware unlike a \w regex.
+    return segment.isWordLike;
+  }
+
+  function snapOffsetToWordBoundary(textNode, offset, direction) {
+    const full = textNode.data;
+    if (!wordSegmenter || !full) return offset;
+
+    // direction: "start" pulls the offset back to the start of whatever
+    // word it's inside of; "end" pushes it forward to the end of whatever
+    // word it's inside of. If the offset already sits exactly on a
+    // boundary (start or end of a word, or inside whitespace/punctuation),
+    // it's left alone — only genuine mid-word offsets get moved.
+    for (const seg of wordSegmenter.segment(full)) {
+      const segStart = seg.index;
+      const segEnd = seg.index + seg.segment.length;
+      if (offset > segStart && offset < segEnd && isWordLike(seg)) {
+        return direction === "start" ? segStart : segEnd;
+      }
+    }
+    return offset;
+  }
+
+  function expandRangeToWordBoundaries(range) {
+    try {
+      const newRange = range.cloneRange();
+
+      const startNode = newRange.startContainer;
+      if (startNode.nodeType === Node.TEXT_NODE) {
+        const newStart = snapOffsetToWordBoundary(startNode, newRange.startOffset, "start");
+        newRange.setStart(startNode, newStart);
+      }
+
+      const endNode = newRange.endContainer;
+      if (endNode.nodeType === Node.TEXT_NODE) {
+        const newEnd = snapOffsetToWordBoundary(endNode, newRange.endOffset, "end");
+        newRange.setEnd(endNode, newEnd);
+      }
+
+      return newRange;
+    } catch (e) {
+      // Any DOM range weirdness (e.g. non-text boundary nodes) — fall back
+      // to the original, unexpanded range rather than breaking selection
+      // entirely.
+      return range;
+    }
+  }
+
+  // ── Surrounding context extraction ──────────────────────────────────
+  // Grabs a bounded amount of text around the selection so the backend
+  // can match tone/register instead of rewriting the fragment in a
+  // vacuum. Capped in characters (not words) since that's what actually
+  // bounds prompt/token cost regardless of language. ~600 chars is
+  // roughly a paragraph-and-a-bit either side — enough to establish
+  // voice without ballooning the request.
+  const CONTEXT_MAX_CHARS = 600;
+
+  function extractSurroundingContext(selectionText, containerEl) {
+    if (!containerEl) return "";
+
+    // Walk up to a reasonably-sized block ancestor rather than reading
+    // the whole page — a paragraph/list-item/cell/message-bubble is the
+    // right unit of "surrounding" text; document.body would pull in nav
+    // bars, sidebars, and unrelated content that pollutes tone-matching
+    // more than it helps.
+    const BLOCK_TAGS = new Set([
+      "P", "DIV", "LI", "TD", "TH", "BLOCKQUOTE", "ARTICLE", "SECTION",
+      "TEXTAREA", "PRE", "FIGCAPTION",
+    ]);
+
+    let block = containerEl;
+    let hops = 0;
+    while (
+      block &&
+      block !== document.body &&
+      !BLOCK_TAGS.has(block.tagName) &&
+      hops < 6
+    ) {
+      block = block.parentElement;
+      hops++;
+    }
+    if (!block || block === document.body) block = containerEl;
+
+    const blockText = (block.innerText || block.textContent || "").trim();
+    if (!blockText) return "";
+
+    // If the block itself is already short, just use the whole thing.
+    if (blockText.length <= CONTEXT_MAX_CHARS) return blockText;
+
+    // Otherwise, center a window of CONTEXT_MAX_CHARS on wherever the
+    // selection sits inside the block text, so long blocks still surface
+    // the locally relevant surrounding sentences rather than always the
+    // start of the block.
+    const idx = blockText.indexOf(selectionText);
+    if (idx === -1) return blockText.slice(0, CONTEXT_MAX_CHARS);
+
+    const half = Math.floor(CONTEXT_MAX_CHARS / 2);
+    const start = Math.max(0, idx - half);
+    const end = Math.min(blockText.length, idx + selectionText.length + half);
+    return blockText.slice(start, end);
+  }
+
   function detectEditContext() {
     // Tier 1: an <input>/<textarea> with an active selection. Note that
     // window.getSelection() does NOT see into form controls in Chrome —
@@ -128,18 +245,37 @@
       (active.tagName === "TEXTAREA" || (active.tagName === "INPUT" && isTextLikeInput(active)))
     ) {
       if (typeof active.selectionStart === "number" && active.selectionStart !== active.selectionEnd) {
+        const { start, end } = expandFieldSelectionToWordBoundaries(
+          active.value, active.selectionStart, active.selectionEnd
+        );
         return {
           tier: "form",
           element: active,
-          start: active.selectionStart,
-          end: active.selectionEnd,
-          text: active.value.slice(active.selectionStart, active.selectionEnd),
-          // Approximate: positions under the whole field rather than the
-          // exact selected glyphs. Precise sub-field caret geometry needs
-          // a hidden-mirror-div measurement technique — skipped here.
+          start,
+          end,
+          text: active.value.slice(start, end),
           rect: active.getBoundingClientRect(),
+          pageContext: extractSurroundingContext(active.value.slice(start, end), active),
         };
       }
+    }
+
+    function expandFieldSelectionToWordBoundaries(value, start, end) {
+      if (!wordSegmenter || !value) return { start, end };
+
+      let newStart = start;
+      let newEnd = end;
+
+      for (const seg of wordSegmenter.segment(value)) {
+        const segStart = seg.index;
+        const segEnd = seg.index + seg.segment.length;
+        if (isWordLike(seg)) {
+          if (start > segStart && start < segEnd) newStart = segStart;
+          if (end > segStart && end < segEnd) newEnd = segEnd;
+        }
+      }
+
+      return { start: newStart, end: newEnd };
     }
 
     // Tiers 2/3/readonly all start from a real window selection.
@@ -148,8 +284,9 @@
       return null;
     }
 
-    const range = selection.getRangeAt(0);
-    const text = selection.toString();
+    const rawRange = selection.getRangeAt(0);
+    const range = expandRangeToWordBoundaries(rawRange);
+    const text = range.toString();
     const rect = range.getBoundingClientRect();
     const container = range.commonAncestorContainer;
     const el = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
@@ -159,12 +296,12 @@
 
     if (!editableRoot) {
       // Selected, but nothing editable underneath it — ordinary page text.
-      return { tier: "readonly", text, rect, range: range.cloneRange() };
+      return { tier: "readonly", text, rect, range: range.cloneRange(), pageContext: extractSurroundingContext(text, el) };
     }
 
     const framework = detectFramework(editableRoot);
     if (framework) {
-      return { tier: "rich-text", frameworkName: framework, text, rect, range: range.cloneRange() };
+      return { tier: "rich-text", frameworkName: framework, text, rect, range: range.cloneRange(), pageContext: extractSurroundingContext(text, editableRoot) };
     }
 
     return {
@@ -173,6 +310,7 @@
       root: editableRoot,
       text,
       rect,
+      pageContext: extractSurroundingContext(text, editableRoot),
     };
   }
 
@@ -751,7 +889,8 @@
           type: "navigator-edit-selection-request",
           selected_text: context.text,
           instruction,
-          action_type: actionType
+          action_type: actionType,
+          surrounding_context: context.pageContext || ""
         },
         (response) => {
           setBusy(false);
