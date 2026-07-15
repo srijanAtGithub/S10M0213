@@ -65,6 +65,27 @@ chrome.runtime.onInstalled.addListener(() => {
   setupContextMenu();
 });
 
+// ── Tab-Specific Side Panel Management ────────────────────────────────
+// REMOVE or comment out the old chrome.sidePanel.setPanelBehavior block entirely.
+
+chrome.action.onClicked.addListener((tab) => {
+  if (!tab || !tab.id) return;
+
+  // 1. Configure the side panel path strictly for this tab.
+  // We do NOT use 'await' here so we don't break the synchronous execution turn.
+  chrome.sidePanel.setOptions({
+    tabId: tab.id,
+    path: "popup.html",
+    enabled: true
+  });
+
+  // 2. Immediately invoke open() in the exact same code block.
+  // This preserves the active user gesture token!
+  chrome.sidePanel.open({ tabId: tab.id }).catch((error) => {
+    console.error("Failed to open tab-specific side panel:", error);
+  });
+});
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === EDIT_MENU_ID && tab && tab.id != null) {
     chrome.tabs.sendMessage(tab.id, { type: "navigator-open-edit-box" });

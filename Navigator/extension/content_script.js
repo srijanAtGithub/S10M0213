@@ -710,7 +710,6 @@
     }
 
     // Morph the window from Input to Preview mode with animation
-    // Morph the window from Input to Preview mode with animation
     function showPreviewMode(text, actionType) {
       pendingAiText = text;
 
@@ -731,8 +730,11 @@
           noticeEl.style.display = "none";
         }
 
-        if (context.tier === "readonly") {
+        // Hide the replace button if the field is read-only OR if the action is an 'ask'
+        if (context.tier === "readonly" || actionType === "ask") {
           replaceBtn.style.display = "none";
+        } else {
+          replaceBtn.style.display = ""; // Restores the default button layout for regular edits
         }
       });
     }

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Sicily Navigator",
   "version": "0.4.0",
-  "description": "Demo build \u2014 no AI yet. Chat interface with per-tab conversation memory, plus a right-click 'Edit with Navigator' flow that auto-edits plain fields/contenteditable and shows a copyable suggestion for rich-text editors or read-only text.",
+  "description": "Web helper - navigate around, ask questions, edit and replace text. All in natural language.",
   "permissions": [
     "activeTab",
     "scripting",
@@ -10,14 +10,10 @@
     "sidePanel",
     "tabs"
   ],
-  "side_panel": {
-    "default_path": "popup.html"
-  },
   "host_permissions": [
     "<all_urls>"
   ],
   "action": {
-    "default_popup": "popup.html",
     "default_title": "Open Sicily Navigator"
   },
   "background": {
