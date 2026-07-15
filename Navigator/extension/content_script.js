@@ -61,7 +61,7 @@
     const style = document.createElement("style");
     style.id = "navigator-highlight-style";
     // Using a nice transparent version of your #3a6df0 blue
-    style.textContent = `::highlight(navigator-selection) { background-color: #3a6df0 !important; color: #ffffff !important; }`;
+    style.textContent = `::highlight(navigator-selection) { background-color: #6879a3ff !important; color: #ffffff !important; }`;
     document.head.appendChild(style);
   }
 
@@ -508,13 +508,18 @@
           position: relative;
         }
 
-        /* Common Styling for Input and Result Views */
+        /* Common Styling for Input and Result Views (Cinematic slide-and-fade) */
         .view {
           position: absolute;
           width: 100%;
           top: 0;
           opacity: 0;
-          transition: opacity 0.35s ease-in-out;
+          transform: translateY(12px) scale(0.97);
+          filter: blur(5px);
+          transition: 
+            opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), 
+            transform 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+            filter 0.45s cubic-bezier(0.16, 1, 0.3, 1);
           pointer-events: none; /* Block interactions when hidden */
           display: block; /* Use block, control visibility via opacity */
         }
@@ -522,25 +527,55 @@
         .view.active {
           position: relative; /* Take up space for height calculation */
           opacity: 1;
+          transform: translateY(0) scale(1);
+          filter: blur(0px);
           pointer-events: auto; /* Enable interaction */
         }
 
-        /* --- Neural Glow Edge (Rotating Inner Border) --- */
-        .wrap.busy .neural-glow {
+        /* --- Full Window Scanning Scanline --- */
+        .wrap::before {
+          content: '';
           position: absolute;
-          top: 0; left: 0; right: 0; bottom: 0;
-          border-radius: 18px;
-          padding: 2px;
-          background: linear-gradient(135deg, rgba(94, 92, 230, 0.8), rgba(130, 240, 255, 0.9), rgba(94, 92, 230, 0.8));
-          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-          -webkit-mask-composite: destination-out;
-          mask-composite: exclude;
+          inset: 0;
+          background: linear-gradient(to bottom, transparent, rgba(130, 240, 255, 0.15), transparent);
+          transform: translateY(-100%);
+          pointer-events: none;
+          z-index: 5;
           opacity: 0;
           transition: opacity 0.3s ease;
         }
+        .wrap.busy::before {
+          opacity: 1;
+          animation: scanLine 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+
+        @keyframes scanLine {
+          0% { transform: translateY(-100%); }
+          100% { transform: translateY(100%); }
+        }
+
+        /* --- Neural Glow Edge (Rotating Inner Border) & full container color drift --- */
+        .neural-glow {
+          position: absolute;
+          inset: 0;
+          border-radius: 18px;
+          pointer-events: none;
+          opacity: 0;
+          /* Animated color drift when busy */
+          background: radial-gradient(circle at 20% 30%, rgba(94, 92, 230, 0.25), transparent 50%),
+                      radial-gradient(circle at 80% 70%, rgba(249, 81, 165, 0.25), transparent 50%);
+          mix-blend-mode: screen;
+          transition: opacity 0.5s ease;
+          z-index: 1;
+        }
         .wrap.busy .neural-glow { 
           opacity: 1; 
-          animation: glowRotate 2s linear infinite; 
+          animation: neuralPulse 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes neuralPulse {
+          0% { filter: hue-rotate(0deg); }
+          100% { filter: hue-rotate(90deg); }
         }
 
         /* --- Outer Radiant Glow Backdrop (Escapes overflow: hidden) --- */
@@ -555,12 +590,15 @@
         }
 
         /* When the panel is busy, ignite the backdrop with synced rotation and breathing */
+        /*UNCOMMENT THE FOLLOWING TO HAVE THE BORDER GLOW AS WELL*/
+        /*
         .wrap.busy ~ .glow-backdrop {
           opacity: 1;
           animation: 
             glowRotate 2s linear infinite, 
             radiantPulse 1.5s ease-in-out infinite alternate;
         }
+        */
 
         @keyframes glowRotate { 
           100% { filter: hue-rotate(360deg); } 
@@ -624,7 +662,7 @@
           overflow-y: auto;
           
           /* Added smooth ease-out for a gradual glow transition */
-          transition: border-color 0.25s ease-out, box-shadow 0.25s ease-out;
+          transition: border-color 0.25s ease-out, box-shadow 0.25s ease-out, opacity 0.3s ease;
         }
 
         textarea:focus { 
@@ -639,6 +677,18 @@
           display: flex;
           gap: 6px;
           align-self: flex-end; /* Anchors the buttons to the bottom right under the text */
+          transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* --- Hide buttons smoothly when busy --- */
+        .wrap.busy .action-btns {
+          opacity: 0;
+          transform: translateY(12px);
+          pointer-events: none;
+        }
+        .wrap.busy textarea {
+          opacity: 0.4;
+          pointer-events: none;
         }
 
         /* --- Action & Submission Buttons (Uniform Glassmorphism) --- */
@@ -668,7 +718,6 @@
         .btn-edit, .btn-replace {
           background: rgba(255, 255, 255, 0.06);
           color: #f2f2f7;
-          border-color: rgba(94, 92, 230, 0.3);
         }
         .btn-edit:hover:not(:disabled), .btn-replace:hover { 
           background: rgba(94, 92, 230, 0.28);
@@ -937,13 +986,13 @@
             input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
           }, 0);
         } else if (e.ctrlKey || e.metaKey) {
-          // Ctrl+Enter or Cmd+Enter triggers the "Ask" flow
-          e.preventDefault();
-          submit("ask");
-        } else {
-          // Regular Enter triggers the primary "Edit" flow
+          // Ctrl+Enter or Cmd+Enter triggers the "Edit" flow
           e.preventDefault();
           submit("edit");
+        } else {
+          // Regular Enter triggers the primary "Ask" flow
+          e.preventDefault();
+          submit("ask");
         }
       }
       if (e.key === "Escape") closeActiveBox();
