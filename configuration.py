@@ -108,18 +108,19 @@ def get_transcriber() -> AsyncOpenAI:
     return AsyncOpenAI()
 
 
-def get_reading_tool_llm(schema):
-    return ChatOpenAI(model="gpt-5.4-nano").with_structured_output(schema, include_raw=False)
-
-
-def get_writing_tool_llm(schema=None):
-    llm = ChatOpenAI(model="gpt-5.4-nano")
+def navigator_smart_llm(schema=None):
+    llm = ChatOpenAI(model="gpt-5.4-mini")
     
-    # If a schema is provided, return the structured version
     if schema:
         return llm.with_structured_output(schema, include_raw=False)
+    return llm
+
+
+def navigator_general_llm(schema=None):
+    llm = ChatOpenAI(model="gpt-5.4-nano")
     
-    # Otherwise, return the raw model for normal chat
+    if schema:
+        return llm.with_structured_output(schema, include_raw=False)
     return llm
 
 

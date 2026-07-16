@@ -1,50 +1,23 @@
 """
 navigator_bridge.py
 ------------------
-Standalone FastAPI server exposing:
-  - REST endpoints for tab-scoped session management (view / clear history)
-  - One WebSocket endpoint per tab for chat turns
+FastAPI server serving as the browser extension bridge.
 
-Demo scope (no AI):
-  - No LLM, no tools, no MCP, no auth, no API key check yet.
-  - Conversation state is held in-memory, one list of LangChain messages
-    per browser tab (keyed by tab_id, sent by the extension).
-  - Runs the trivial LangGraph graph from navigator_graph.py on every turn,
-    feeding it the tab's full message history so far (not just the latest
-    message), and stores the graph's updated history back for next time.
+Features:
+  - Chat (WebSocket): Tab-scoped conversation state managed in-memory via LangGraph[cite: 3]. 
+    Sessions are created lazily and cleared on tab closure or explicit user request[cite: 3].
+  - Tools (REST): Stateless endpoints for /edit-selection and /organise-tabs[cite: 3].
 
-Session lifecycle (this is the piece that used to be missing):
-  - A tab's history is created lazily on its first message.
-  - It is returned to the popup on open via GET /session/{tab_id}, so
-    switching tabs and coming back restores that tab's conversation.
-  - It is wiped explicitly via DELETE /session/{tab_id} ("Clear chat" button).
-  - It is wiped automatically when the tab itself closes — background.js
-    listens for chrome.tabs.onRemoved and calls DELETE /session/{tab_id}.
-  - Nothing here survives a server restart; that's fine for this demo —
-    a real persistence layer can replace SessionStore later without
-    touching the graph or the extension's protocol.
+Design:
+  - This is a modular demo. The SessionStore and internal logic are structured 
+    for easy migration to persistent storage and integration with LLM 
+    configuration/ToolManagers in the future[cite: 3].
 
-This file also exposes a second, unrelated pipeline: POST /edit-selection,
-for the "Edit with Navigator" right-click-a-selection flow. That one is
-deliberately NOT part of the tab-session system above — it's stateless,
-single-shot (selected text + instruction in, edited text out), has no
-tab_id, and touches SessionStore not at all. Don't be tempted to route it
-through the WebSocket/graph machinery; it has no conversation to remember.
-
-Run it:
-    uv run uvicorn Navigator.navigator_bridge:app --reload --port 8765
-    (or: python -m uvicorn Navigator.navigator_bridge:app --reload --port 8765)
-
-This intentionally does NOT reuse configuration.py / agent.py / Cowork —
-there is no LLM to configure yet. Once the real AI is wired in, this file
-is where a real ToolManager / configuration.get_main_llm() would be added,
-following the same pattern as Cowork/cowork_session.py. SessionStore below
-is deliberately shaped so that swap is easy: it's already just "tab_id ->
-list of LangChain messages", which is what a checkpointer would want too.
+Run:
+  uv run uvicorn Navigator.navigator_bridge:app --reload --port 8765[cite: 3]
 """
 
-from pydantic import BaseModel, Field
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 import configuration
 configuration.load_config()
@@ -52,10 +25,11 @@ configuration.load_config()
 import structlog
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from pydantic import BaseModel
 
 from Navigator.navigator_graph import build_navigator_graph
+
+from Navigator.Task_Files.Organise_Tools import OrganiseTabsRequest, process_organise_tabs
+from Navigator.Task_Files.Edit_Selection import EditSelectionRequest, EditSelectionResponse, process_edit_selection
 
 log = structlog.get_logger()
 
@@ -72,6 +46,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.post("/organise-tabs")
+async def organise_tabs(req: OrganiseTabsRequest):
+    return await process_organise_tabs(req.tabs)
+
+@app.post("/edit-selection", response_model=EditSelectionResponse)
+async def edit_selection(req: EditSelectionRequest):
+    return await process_edit_selection(req)
 
 # One compiled graph instance, reused for every turn on every tab.
 # It has no memory of its own — memory lives in SessionStore below and
@@ -156,135 +138,6 @@ async def delete_session(tab_id: str):
     return {"status": "cleared", "existed": existed}
 
 
-class EditSelectionRequest(BaseModel):
-    selected_text: str
-    instruction: str
-    surrounding_context: str = ""
-    action_type: str = "edit"  # New flag: "edit" or "ask"
-
-
-class EditSelectionResponse(BaseModel):
-    edited_text: str
-
-
-# For Pydantic purposes
-class EditResult(BaseModel):
-    edited_text: str = Field(
-        description="The final output to return to the user, either a rewritten text or a direct answer to their question."
-    )
-
-
-import uuid
-
-async def call_edit_model(selected_text: str, instruction: str, action_type: str = "edit", surrounding_context: str = "") -> str:
-    llm = configuration.get_reading_tool_llm(EditResult)
-    
-    # Branch the persona based on the button clicked
-    if action_type == "ask":
-        system_msg = SystemMessage(
-            content=(
-                "You are a precise, direct information assistant. "
-                "The user has selected some text and asked a question about it. "
-                "Answer their question completely and directly based on the selected text and context. "
-                "CRITICAL CONSTRAINT: Output ONLY the direct answer to the user's question. "
-                "Do NOT include any conversational filler, pleasantries, meta-commentary, "
-                "or follow-up prompts (e.g., never end with 'Let me know if you need more details', "
-                "'Hope this helps!', or 'Shall I do anything else?'). "
-                "Provide a clean, self-contained final response with absolutely no open-ended transitions."
-            )
-        )
-    elif action_type == "rewrite":
-        system_msg = SystemMessage(
-            content=(
-                "You are an automated, programmatic text-replacement engine. "
-                "Rewrite the user's selected text in a highly professional manner, completely free of jargon. "
-                "The tone should be polished and appropriate for professional emails or personal documents. "
-                "CRITICAL CONSTRAINT: Output EXCLUSIVELY the final revised text. "
-                "Do NOT include any introductions, explanations, pleasantries, meta-commentary, "
-                "or follow-up questions. Your entire output will be injected directly into the user's document."
-            )
-        )
-    elif action_type == "summarise":
-        system_msg = SystemMessage(
-            content=(
-                "You are an automated, programmatic text-replacement engine. "
-                "Provide a concise, highly accurate summary of the user's selected text. "
-                "CRITICAL CONSTRAINT: Output EXCLUSIVELY the final summarized text. "
-                "Do NOT include any introductions like 'Here is the summary', pleasantries, or meta-commentary. "
-                "Your entire output will be injected directly into the user's document."
-            )
-        )
-    else:
-        system_msg = SystemMessage(
-            content=(
-                "You are an automated, programmatic text-replacement engine. "
-                "Rewrite the user's selected text exactly according to their instruction. "
-                "CRITICAL CONSTRAINT: Output EXCLUSIVELY the final revised text. "
-                "Do NOT include any introductions, explanations, pleasantries, meta-commentary, or follow-up questions."
-            )
-        )
-    
-    prompt_text = f"Instruction/Question: {instruction}\n\nSelected Text:\n{selected_text}"
-    if surrounding_context:
-        prompt_text += f"\n\nSurrounding Context:\n{surrounding_context}"
-        
-    from usage_tracker import record_usage
-    
-    edited_text = ""
-    session_id = f"edit_{uuid.uuid4().hex[:8]}"
-    
-    try:
-        # Use astream_events to catch the AIMessage tokens before Pydantic parsing
-        async for event in llm.astream_events([system_msg, HumanMessage(content=prompt_text)], version="v2"):
-            
-            # 1. Catch the raw LLM usage stats
-            if event["event"] == "on_chat_model_end":
-                output = event.get("data", {}).get("output")
-                if output and hasattr(output, "usage_metadata") and output.usage_metadata:
-                    usage = output.usage_metadata
-                    model_name = output.response_metadata.get("model_name", "unknown")
-                    
-                    try:
-                        record_usage(
-                            dimension="navigator",
-                            session_id=session_id,
-                            model_name=model_name,
-                            input_tokens=usage.get("input_tokens", 0),
-                            output_tokens=usage.get("output_tokens", 0),
-                            cached_input_tokens=usage.get("input_token_details", {}).get("cache_read_tokens", 0)
-                        )
-                    except Exception as rec_err:
-                        log.warning("record_usage failed for edit", error=str(rec_err))
-            
-            # 2. Catch the final structured output
-            elif event["event"] == "on_chain_end":
-                data_out = event.get("data", {}).get("output")
-                if isinstance(data_out, EditResult):
-                    edited_text = data_out.edited_text
-                    
-    except Exception as e:
-        log.warning("Failed during edit event stream tracking", error=str(e))
-    
-    # Fallback in case the event stream didn't resolve the text correctly
-    if not edited_text:
-        response = await llm.ainvoke([system_msg, HumanMessage(content=prompt_text)])
-        edited_text = response.edited_text
-        
-    return edited_text
-
-
-@app.post("/edit-selection", response_model=EditSelectionResponse)
-async def edit_selection(req: EditSelectionRequest):
-    # Pass the action_type down
-    edited = await call_edit_model(
-        req.selected_text, 
-        req.instruction, 
-        req.action_type, 
-        req.surrounding_context
-    )
-    return EditSelectionResponse(edited_text=edited)
-
-
 @app.websocket("/ws/{tab_id}")
 async def websocket_endpoint(websocket: WebSocket, tab_id: str):
     await websocket.accept()
@@ -367,101 +220,3 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
             await websocket.send_json({"reply": f"Server error: {e}"})
         except Exception:
             pass
-
-
-# Add this import at the top with other langchain imports
-from langchain_core.tools import tool
-
-# ── Organise Tabs Data Models & Tool ───────────────────────────────────
-
-class TabInfo(BaseModel):
-    id: int
-    title: str
-    url: str
-    groupId: int
-
-class OrganiseTabsRequest(BaseModel):
-    tabs: list[TabInfo]
-
-class TabGroupPlan(BaseModel):
-    title: str = Field(description="The logical category name for this group of tabs (e.g. 'Social Media', 'Research', 'Shopping', 'Docs'). Keep it short and descriptive.")
-    color: str = Field(description="The color of the tab group. Must be one of: 'grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'.")
-    tab_ids: list[int] = Field(description="The list of tab IDs that belong to this group.")
-
-class TabGroupingPlan(BaseModel):
-    groups: list[TabGroupPlan] = Field(description="List of tab groups to create.")
-
-@tool(args_schema=TabGroupingPlan)
-def organize_tabs_tool(groups: list[TabGroupPlan]) -> list[dict]:
-    """
-    Organises browser tabs into neat, categorized groups based on their topics, URLs, and titles.
-    Use this tool to submit the final tab grouping plan.
-    """
-    return [g.model_dump() for g in groups]
-
-
-# ── Organise Tabs Endpoint ─────────────────────────────────────────────
-
-@app.post("/organise-tabs")
-async def organise_tabs(req: OrganiseTabsRequest):
-    """
-    Organise the provided tabs using Sicily AI.
-    Exposes a tool-enabled LLM call that groups browser tabs into cohesive categories.
-    """
-    llm = configuration.get_writing_tool_llm()
-    
-    # Bind the tool to the LLM (and enforce its selection if supported)
-    try:
-        llm_with_tools = llm.bind_tools([organize_tabs_tool], tool_choice="organize_tabs_tool")
-    except Exception:
-        llm_with_tools = llm.bind_tools([organize_tabs_tool])
-    
-    system_msg = SystemMessage(
-        content=(
-            "You are an automated, programmatic browser assistant. "
-            "Your sole task is to organize the user's browser tabs into logical groups. "
-            "Examine the titles and URLs of the provided tabs, and cluster similar tabs together. "
-            "For each group, pick a highly professional title and a corresponding color. "
-            "CRITICAL: You MUST call the `organize_tabs_tool` with the final grouping plan. "
-            "Do NOT return conversational filler or explanations. Only execute the tool call."
-        )
-    )
-    
-    # Format the data cleanly for prompt processing
-    tabs_data = [{"id": t.id, "title": t.title, "url": t.url, "groupId": t.groupId} for t in req.tabs]
-    import json
-    prompt_text = f"Please organize these active browser tabs:\n\n{json.dumps(tabs_data, indent=2)}"
-    
-    log.info("Organising tabs with LLM", tab_count=len(req.tabs))
-    
-    groups = []
-    try:
-        response = await llm_with_tools.ainvoke([system_msg, HumanMessage(content=prompt_text)])
-        
-        # 1. Extract grouping plan from tool calls
-        if response.tool_calls:
-            for tool_call in response.tool_calls:
-                if tool_call["name"] == "organize_tabs_tool":
-                    args = tool_call["args"]
-                    if isinstance(args, dict):
-                        groups = args.get("groups", args)
-                    elif isinstance(args, list):
-                        groups = args
-                        
-        # 2. Fallback: Parse response content as JSON if no tool calls were correctly captured
-        if not groups and response.content:
-            import re
-            json_match = re.search(r"\{.*\}|\[.*\]", response.content, re.DOTALL)
-            if json_match:
-                parsed = json.loads(json_match.group(0))
-                if isinstance(parsed, dict):
-                    groups = parsed.get("groups", parsed)
-                elif isinstance(parsed, list):
-                    groups = parsed
-                    
-    except Exception as e:
-        log.error("Failed to organise tabs using LLM", error=str(e))
-        return {"groups": []}
-        
-    log.info("Tab grouping plan generated", groups_count=len(groups))
-    return {"groups": groups}
