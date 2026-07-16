@@ -26,7 +26,7 @@ import structlog
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from Navigator.navigator_graph import build_navigator_graph
+from Navigator.Task_Files.Chat_Section import build_navigator_graph
 
 from Navigator.Task_Files.Organise_Tools import OrganiseTabsRequest, process_organise_tabs
 from Navigator.Task_Files.Edit_Selection import EditSelectionRequest, EditSelectionResponse, process_edit_selection

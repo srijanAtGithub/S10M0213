@@ -9,10 +9,14 @@ and uses the writing tool LLM to generate a smart response.
 import operator
 from typing import Annotated, TypedDict
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
 import configuration
+
+import structlog
+log = structlog.get_logger()
+
 
 # ── State Declaration Update ───────────────────────────────────────────
 class NavigatorState(TypedDict):
