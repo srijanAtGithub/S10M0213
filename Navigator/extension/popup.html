@@ -1057,12 +1057,160 @@
       opacity: 1;
       transform: translateY(0) scale(1);
     }
+
+    /* --- Disconnected Screen Overlay --- */
+    #disconnected-screen {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      background: rgba(10, 10, 12, 0.72);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #disconnected-screen.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Orb glow behind icon */
+    .dc-orb {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      margin-bottom: 24px;
+    }
+
+    .dc-orb-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1.5px solid rgba(255, 80, 60, 0.35);
+      animation: dcRingPulse 2.4s ease-in-out infinite;
+    }
+
+    .dc-orb-ring:nth-child(2) {
+      inset: -10px;
+      border-color: rgba(255, 80, 60, 0.18);
+      animation-delay: 0.4s;
+    }
+
+    .dc-orb-ring:nth-child(3) {
+      inset: -22px;
+      border-color: rgba(255, 80, 60, 0.08);
+      animation-delay: 0.8s;
+    }
+
+    @keyframes dcRingPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.1); opacity: 0.5; }
+    }
+
+    .dc-orb-core {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle at 38% 35%, rgba(255, 100, 80, 0.25), rgba(20, 20, 22, 0.9) 70%);
+      border: 1px solid rgba(255, 80, 60, 0.3);
+      box-shadow:
+        0 0 22px rgba(255, 60, 40, 0.2),
+        inset 0 0 14px rgba(255, 60, 40, 0.12);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .dc-orb-core svg {
+      width: 28px;
+      height: 28px;
+      color: rgba(255, 110, 90, 0.9);
+      filter: drop-shadow(0 0 6px rgba(255, 80, 60, 0.5));
+      animation: dcIconFloat 3s ease-in-out infinite;
+    }
+
+    @keyframes dcIconFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-3px); }
+    }
+
+    .dc-title {
+      font-size: 15px;
+      font-weight: 650;
+      color: #f2f2f7;
+      letter-spacing: -0.2px;
+      margin-bottom: 8px;
+    }
+
+    .dc-subtitle {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.38);
+      line-height: 1.55;
+      text-align: center;
+      max-width: 210px;
+      margin-bottom: 28px;
+    }
+
+    .dc-code {
+      display: inline-block;
+      font-family: "SF Mono", "Fira Mono", Menlo, monospace;
+      font-size: 10.5px;
+      color: rgba(255, 200, 80, 0.75);
+      background: rgba(255, 200, 80, 0.06);
+      border: 1px solid rgba(255, 200, 80, 0.14);
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+
+    /* When disconnected, blur/dim the main content underneath */
+    .wrap.offline #messages,
+    .wrap.offline #bottom-dock {
+      filter: blur(3px);
+      pointer-events: none;
+      user-select: none;
+      transition: filter 0.4s ease;
+    }
+
+    .wrap.offline #header {
+      opacity: 0.4;
+      pointer-events: none;
+      transition: opacity 0.4s ease;
+    }
   </style>
 </head>
 
 <body>
   <div class="wrap" id="app-wrap">
     <div class="neural-glow"></div>
+
+    <!-- Disconnected State Overlay -->
+    <div id="disconnected-screen">
+      <div class="dc-orb">
+        <div class="dc-orb-ring"></div>
+        <div class="dc-orb-ring"></div>
+        <div class="dc-orb-ring"></div>
+        <div class="dc-orb-core">
+          <!-- Broken link icon -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+            <line x1="4" y1="4" x2="20" y2="20"/>
+          </svg>
+        </div>
+      </div>
+      <div class="dc-title">Sicily is offline</div>
+      <div class="dc-subtitle">
+        The navigator bridge isn't running.<br>
+        Start it with <span class="dc-code">navigator_bridge.py</span>
+      </div>
+    </div>
 
     <div id="drag-overlay">
       <div class="drop-zone" id="zone-collections">

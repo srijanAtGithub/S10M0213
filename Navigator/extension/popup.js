@@ -15,6 +15,7 @@ const dragOverlay = document.getElementById("drag-overlay");
 const zoneContext = document.getElementById("zone-context");
 const zoneCollections = document.getElementById("zone-collections");
 const contextShelf = document.getElementById("context-shelf");
+const disconnectedScreen = document.getElementById("disconnected-screen");
 
 let attachedContexts = [];
 
@@ -84,6 +85,23 @@ function setStatus(state) {
     : state === "disconnected"
       ? "disconnected"
       : "";
+
+  if (state === "connected") {
+    showOnline();
+  } else if (state === "disconnected") {
+    showOffline();
+  }
+}
+
+function showOffline() {
+  appWrap.classList.add("offline");
+  disconnectedScreen.classList.add("visible");
+}
+
+function showOnline() {
+  appWrap.classList.remove("offline");
+  disconnectedScreen.classList.remove("visible");
+  disconnectedScreen.classList.remove("retrying");
 }
 
 function setSending(isSending) {
@@ -150,7 +168,6 @@ function connectSocket(tabId) {
 
   socket.onclose = () => {
     setStatus("disconnected");
-    addMessage("Disconnected. Is navigator_bridge.py running on port 8765?", "system");
     setSending(false);
   };
 
