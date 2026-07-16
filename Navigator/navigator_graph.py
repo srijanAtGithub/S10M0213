@@ -1,39 +1,18 @@
 """
 navigator_graph.py
 -----------------
-The absolute minimum LangGraph graph for the Navigator dimension demo.
-
-No LLM. No tools. No MCP.
-
-One node ("echo_node") that takes the tab's full conversation so far
-(state["messages"] — handed in by navigator_bridge.py's SessionStore on
-every turn, not just the newest message), plus the current page context
-(url/title) the extension sent along with it, and returns a plain text
-response describing the website.
-
-This exists purely to prove the plumbing end-to-end, memory included:
-
-    extension popup (chat UI, tab-scoped)
-        -> background.js            (tab lifecycle only)
-        -> navigator_bridge.py       (WebSocket + REST, per-tab SessionStore)
-        -> navigator_graph.py        (LangGraph, this file)
-        -> ...back up the same chain to the popup
-
-Because the bridge now passes in the accumulated history for that tab
-instead of a single HumanMessage, NavigatorState.messages is genuinely
-doing something: echo_node can see how many turns have happened in this
-tab's session. Once this works, echo_node can be swapped for a real LLM +
-real browser-control tools (click/type/read_dom/navigate) without touching
-anything else in the chain — the state shape and the per-tab history
-plumbing stay exactly as they are.
+The LangGraph graph for the Navigator dimension.
+Takes the tab's full conversation so far, injects the current page context,
+and uses the writing tool LLM to generate a smart response.
 """
 
 import operator
 from typing import Annotated, TypedDict
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
+import configuration
 
 # ── State ──────────────────────────────────────────────────────────────
 class NavigatorState(TypedDict):
@@ -42,50 +21,41 @@ class NavigatorState(TypedDict):
     page_url: str
     page_title: str
 
-
-# ── The one and only node ─────────────────────────────────────────────
-def echo_node(state: NavigatorState) -> NavigatorState:
+# ── The Chat Node ──────────────────────────────────────────────────────
+async def chat_node(state: NavigatorState) -> dict:
     """
-    No AI. Builds a plain text reply out of whatever page info the
-    extension handed us, plus a turn count derived from the *real*
-    accumulated history for this tab — so we can confirm both the full
-    round trip (popup -> backend -> popup) and per-tab memory actually
-    work, before any LLM is involved.
+    Connects to the real LLM. Injects the active tab's context as a SystemMessage
+    so the AI knows what page the user is currently looking at.
     """
-    messages = state["messages"]
-    last_human = messages[-1]
-    user_text = last_human.content if isinstance(last_human, HumanMessage) else ""
+    # Grab the LLM designated for writing/chat tasks
+    llm = configuration.get_writing_tool_llm()
 
-    turn_number = sum(1 for m in messages if isinstance(m, HumanMessage))
+    url = state.get("page_url") or "Unknown"
+    title = state.get("page_title") or "Unknown"
 
-    url = state.get("page_url") or "(no url received)"
-    title = state.get("page_title") or "(no title received)"
-
-    reply_text = (
-        f"[Turn {turn_number} in this tab's session]\n"
-        f"You said: \"{user_text}\"\n\n"
-        f"Current website:\n"
-        f"  Title: {title}\n"
-        f"  URL:   {url}"
+    # Define the AI's persona and provide the real-time page context
+    system_prompt = SystemMessage(
+        content=(
+            "You are a helpful assistant"
+        )
     )
 
-    return {"messages": [AIMessage(content=reply_text)]}
+    # Combine the system prompt with the tab's accumulated message history
+    conversation = [system_prompt] + state["messages"]
 
+    # Call the LLM
+    response = await llm.ainvoke(conversation)
+
+    return {"messages": [response]}
 
 # ── Build the graph ────────────────────────────────────────────────────
 def build_navigator_graph():
     """
-    Simplest possible graph shape:
-
-        echo_node -> END
-
-    No router, no tool node, no conditional edges — there is nothing
-    to branch on yet since there are no tools and no LLM. Memory across
-    turns comes from the caller (navigator_bridge.py) passing in the full
-    history each time, not from anything inside the graph itself.
+    Simplest possible graph shape: chat -> END
+    Memory across turns comes from the caller (navigator_bridge.py).
     """
     graph = StateGraph(NavigatorState)
-    graph.add_node("echo", echo_node)
-    graph.set_entry_point("echo")
-    graph.add_edge("echo", END)
+    graph.add_node("chat", chat_node)
+    graph.set_entry_point("chat")
+    graph.add_edge("chat", END)
     return graph.compile()

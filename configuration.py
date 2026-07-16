@@ -112,8 +112,15 @@ def get_reading_tool_llm(schema):
     return ChatOpenAI(model="gpt-5.4-nano").with_structured_output(schema, include_raw=False)
 
 
-def get_writing_tool_llm(schema):
-    return ChatOpenAI(model="gpt-5.4-nano").with_structured_output(schema, include_raw=False)
+def get_writing_tool_llm(schema=None):
+    llm = ChatOpenAI(model="gpt-5.4-nano")
+    
+    # If a schema is provided, return the structured version
+    if schema:
+        return llm.with_structured_output(schema, include_raw=False)
+    
+    # Otherwise, return the raw model for normal chat
+    return llm
 
 
 TOOL_LABELS = {

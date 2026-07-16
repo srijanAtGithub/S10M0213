@@ -6,6 +6,10 @@ const inputEl = document.getElementById("input-box");
 const sendBtn = document.getElementById("send-btn");
 const clearBtn = document.getElementById("clear-btn");
 const statusDot = document.getElementById("status-dot");
+const quickActionsWrap = document.getElementById("quick-actions");
+const quickActionsBtn = document.getElementById("quick-actions-btn");
+const quickActionsMenu = document.getElementById("quick-actions-menu");
+const qaItems = document.querySelectorAll(".qa-item");
 
 let socket = null;
 let currentTab = { id: null, url: "", title: "" };
@@ -37,6 +41,13 @@ function setStatus(state) {
 function setSending(isSending) {
   sendBtn.disabled = isSending;
   sendBtn.textContent = isSending ? "..." : "Send";
+  
+  // Sync the futuristic neural scanline effect from content_script.js!
+  if (isSending) {
+    appWrap.classList.add("busy");
+  } else {
+    appWrap.classList.remove("busy");
+  }
 }
 
 async function getActiveTabInfo() {
@@ -134,6 +145,70 @@ sendBtn.addEventListener("click", sendMessage);
 clearBtn.addEventListener("click", handleClear);
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendMessage();
+});
+
+// ── Quick Actions menu ──────────────────────────────────────────────────
+let qaCloseTimer = null;
+
+function openQuickActions() {
+  clearTimeout(qaCloseTimer);
+  quickActionsWrap.classList.add("open");
+}
+
+function closeQuickActions(delay = 0) {
+  clearTimeout(qaCloseTimer);
+  qaCloseTimer = setTimeout(() => {
+    quickActionsWrap.classList.remove("open");
+  }, delay);
+}
+
+// Hover to open/close with better containment
+quickActionsWrap.addEventListener("mouseenter", openQuickActions);
+
+// Keep open while hovering the menu itself or its items
+quickActionsMenu.addEventListener("mouseenter", openQuickActions);
+
+quickActionsWrap.addEventListener("mouseleave", () => closeQuickActions(220)); // slightly longer delay
+
+// Click also toggles, for touch/trackpad users who tap instead of hover
+quickActionsBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (quickActionsWrap.classList.contains("open")) {
+    closeQuickActions();
+  } else {
+    openQuickActions();
+  }
+});
+
+// Click outside closes it
+document.addEventListener("click", (e) => {
+  if (!quickActionsWrap.contains(e.target)) {
+    closeQuickActions();
+  }
+});
+
+// Escape closes it
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeQuickActions();
+});
+
+// Placeholder handlers — backend wiring comes later.
+function handleQuickAction(action) {
+  closeQuickActions();
+
+  const labels = {
+    "summarise-page": "Summarise Page",
+    "organise-tabs": "Organise Tabs",
+    "find-more-like-this": "Find More Like This",
+    "reading-lists": "Your Reading Lists",
+    "saved-collections": "Saved Collections",
+  };
+
+  addMessage(`"${labels[action] || action}" is coming soon.`, "system");
+}
+
+qaItems.forEach((item) => {
+  item.addEventListener("click", () => handleQuickAction(item.dataset.action));
 });
 
 // ── Init ──────────────────────────────────────────────────────────────
