@@ -214,7 +214,7 @@ function setStatus(state) {
 function setSending(isSending) {
   sendBtn.disabled = isSending;
   sendBtn.textContent = isSending ? "..." : "Send";
-  
+
   // Sync the futuristic neural scanline effect from content_script.js!
   if (isSending) {
     appWrap.classList.add("busy");
@@ -386,7 +386,10 @@ function handleQuickAction(action) {
     "saved-collections": "Saved Collections",
   };
 
-  addMessage(`"${labels[action] || action}" is coming soon.`, "system");
+  const actionName = labels[action] || action;
+
+  // Call the new notification service instead of dirtying the chat history!
+  NotificationService.show(`"${actionName}" is coming soon.`);
 }
 
 qaItems.forEach((item) => {
@@ -525,6 +528,63 @@ function renderContextShelf() {
     contextShelf.appendChild(chip);
   });
 }
+
+// ── Reusable Glass Notification Service ─────────────────────────────────
+const NotificationService = {
+  container: null,
+
+  // Lazy-initializes the container within the premium wrapper
+  initContainer() {
+    if (this.container) return;
+
+    // We append inside the "app-wrap" container so it honors any rounding/constraints
+    const appWrap = document.getElementById("app-wrap") || document.body;
+    this.container = document.createElement("div");
+    this.container.id = "notification-container";
+    appWrap.appendChild(this.container);
+  },
+
+  /**
+   * Displays a beautiful glass toast notification.
+   * @param {string} message - The text content to display.
+   * @param {number} duration - Time in milliseconds before it starts hiding (default: 3000ms).
+   */
+  show(message, duration = 3000) {
+    this.initContainer();
+
+    const toast = document.createElement("div");
+    toast.className = "glass-notification";
+    toast.textContent = message;
+
+    this.container.appendChild(toast);
+
+    // Force reflow to trigger CSS transitions
+    toast.offsetHeight;
+
+    // Slide and fade in
+    toast.classList.add("show");
+
+    // Phase 1: Fade & Slide out
+    const hideTimeout = setTimeout(() => {
+      toast.classList.remove("show");
+
+      // Phase 2: Complete DOM removal after transition finishes (300ms matches CSS transition)
+      toast.addEventListener("transitionend", () => {
+        toast.remove();
+      });
+    }, duration);
+
+    // Optional click-to-dismiss early
+    toast.style.cursor = "pointer";
+    toast.addEventListener("click", () => {
+      clearTimeout(hideTimeout);
+      toast.classList.remove("show");
+      toast.addEventListener("transitionend", () => {
+        toast.remove();
+      });
+    });
+  }
+};
 
 // ── Init ──────────────────────────────────────────────────────────────
 (async () => {

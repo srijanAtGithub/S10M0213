@@ -24,11 +24,12 @@
       height: 100%;
       border-radius: 0;
       border: 1px solid rgba(255, 255, 255, 0.18);
-      
+
       /* Glassmorphism Effect */
       backdrop-filter: blur(30px);
       -webkit-backdrop-filter: blur(30px);
-      background: rgba(0, 0, 0, 0.95); /* Dark base for side panel */
+      background: rgba(0, 0, 0, 0.95);
+      /* Dark base for side panel */
 
       /* The "Shader" / Glowing Border Effect */
       box-shadow:
@@ -60,7 +61,7 @@
       pointer-events: none;
       opacity: 0;
       background: radial-gradient(circle at 20% 30%, rgba(94, 92, 230, 0.25), transparent 50%),
-                  radial-gradient(circle at 80% 70%, rgba(249, 81, 165, 0.25), transparent 50%);
+        radial-gradient(circle at 80% 70%, rgba(249, 81, 165, 0.25), transparent 50%);
       mix-blend-mode: screen;
       transition: opacity 0.5s ease;
       z-index: 1;
@@ -72,8 +73,13 @@
     }
 
     @keyframes neuralPulse {
-      0% { filter: hue-rotate(0deg); }
-      100% { filter: hue-rotate(90deg); }
+      0% {
+        filter: hue-rotate(0deg);
+      }
+
+      100% {
+        filter: hue-rotate(90deg);
+      }
     }
 
     /* --- Header Layout --- */
@@ -88,7 +94,7 @@
       justify-content: space-between;
       position: relative;
       /* FIXED: Raised z-index so dropdown works */
-      z-index: 10; 
+      z-index: 10;
     }
 
     #header-right {
@@ -110,11 +116,18 @@
       backdrop-filter: blur(20px);
     }
 
-    #clear-btn:hover { background: rgba(94, 92, 230, 0.28); }
-    #clear-btn:active { transform: scale(0.96); }
+    #clear-btn:hover {
+      background: rgba(94, 92, 230, 0.28);
+    }
+
+    #clear-btn:active {
+      transform: scale(0.96);
+    }
 
     /* --- Quick Actions --- */
-    #quick-actions { position: relative; }
+    #quick-actions {
+      position: relative;
+    }
 
     #quick-actions-btn {
       padding: 5px 10px;
@@ -138,9 +151,18 @@
       transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
 
-    #quick-actions.open #quick-actions-btn svg { transform: rotate(180deg); }
-    #quick-actions-btn:hover, #quick-actions.open #quick-actions-btn { background: rgba(94, 92, 230, 0.28); }
-    #quick-actions-btn:active { transform: scale(0.96); }
+    #quick-actions.open #quick-actions-btn svg {
+      transform: rotate(180deg);
+    }
+
+    #quick-actions-btn:hover,
+    #quick-actions.open #quick-actions-btn {
+      background: rgba(94, 92, 230, 0.28);
+    }
+
+    #quick-actions-btn:active {
+      transform: scale(0.96);
+    }
 
     #quick-actions-bridge {
       position: absolute;
@@ -156,12 +178,12 @@
       top: calc(100% + 10px);
       right: 0;
       min-width: 190px;
-      
+
       /* FIXED: Glassmorphism settings matching content_script.js */
-      background: rgba(25, 25, 26, 0.35); 
+      background: rgba(25, 25, 26, 0.35);
       backdrop-filter: blur(30px);
       -webkit-backdrop-filter: blur(30px);
-      
+
       border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 14px;
       box-shadow:
@@ -173,7 +195,7 @@
       flex-direction: column;
       gap: 2px;
       z-index: 10;
-      
+
       opacity: 0;
       visibility: hidden;
       pointer-events: none;
@@ -215,20 +237,51 @@
       transform: translateX(6px);
     }
 
-    #quick-actions.open .qa-item { animation: qaItemIn 0.36s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-    #quick-actions.open .qa-item:nth-child(1) { animation-delay: 0.03s; }
-    #quick-actions.open .qa-item:nth-child(2) { animation-delay: 0.07s; }
-    #quick-actions.open .qa-item:nth-child(3) { animation-delay: 0.11s; }
-    #quick-actions.open .qa-item:nth-child(5) { animation-delay: 0.15s; }
-    #quick-actions.open .qa-item:nth-child(6) { animation-delay: 0.19s; }
-
-    @keyframes qaItemIn {
-      from { opacity: 0; transform: translateX(6px); }
-      to { opacity: 1; transform: translateX(0); }
+    #quick-actions.open .qa-item {
+      animation: qaItemIn 0.36s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
-    .qa-item:hover { background: rgba(94, 92, 230, 0.22); padding-left: 13px; }
-    .qa-item:active { transform: scale(0.97); background: rgba(94, 92, 230, 0.32); }
+    #quick-actions.open .qa-item:nth-child(1) {
+      animation-delay: 0.03s;
+    }
+
+    #quick-actions.open .qa-item:nth-child(2) {
+      animation-delay: 0.07s;
+    }
+
+    #quick-actions.open .qa-item:nth-child(3) {
+      animation-delay: 0.11s;
+    }
+
+    #quick-actions.open .qa-item:nth-child(5) {
+      animation-delay: 0.15s;
+    }
+
+    #quick-actions.open .qa-item:nth-child(6) {
+      animation-delay: 0.19s;
+    }
+
+    @keyframes qaItemIn {
+      from {
+        opacity: 0;
+        transform: translateX(6px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
+    }
+
+    .qa-item:hover {
+      background: rgba(94, 92, 230, 0.22);
+      padding-left: 13px;
+    }
+
+    .qa-item:active {
+      transform: scale(0.97);
+      background: rgba(94, 92, 230, 0.32);
+    }
 
     .qa-icon {
       width: 15px;
@@ -239,7 +292,11 @@
       justify-content: center;
       opacity: 0.85;
     }
-    .qa-icon svg { width: 100%; height: 100%; }
+
+    .qa-icon svg {
+      width: 100%;
+      height: 100%;
+    }
 
     .qa-divider {
       height: 1px;
@@ -255,25 +312,47 @@
       display: inline-block;
       transition: background-color 0.3s ease;
     }
-    #status-dot.connected { background: #34c759; box-shadow: 0 0 8px rgba(52, 199, 89, 0.4); }
-    #status-dot.disconnected { background: #ff453a; box-shadow: 0 0 8px rgba(255, 69, 58, 0.4); }
+
+    #status-dot.connected {
+      background: #34c759;
+      box-shadow: 0 0 8px rgba(52, 199, 89, 0.4);
+    }
+
+    #status-dot.disconnected {
+      background: #ff453a;
+      box-shadow: 0 0 8px rgba(255, 69, 58, 0.4);
+    }
 
     /* --- Messages Thread (Editorial Timeline) --- */
     #messages {
       flex: 1;
       overflow-y: auto;
-      padding: 24px 20px; /* Generous breathing room */
+      padding: 24px 20px;
+      /* Generous breathing room */
       display: flex;
       flex-direction: column;
-      gap: 10px; /* Distinct vertical separation between turns */
+      gap: 10px;
+      /* Distinct vertical separation between turns */
       position: relative;
       z-index: 2;
     }
 
-    #messages::-webkit-scrollbar { width: 7px; }
-    #messages::-webkit-scrollbar-track { background: transparent; }
-    #messages::-webkit-scrollbar-thumb { background: rgba(120, 120, 128, 0.4); border-radius: 4px; }
-    #messages::-webkit-scrollbar-thumb:hover { background: rgba(120, 120, 128, 0.6); }
+    #messages::-webkit-scrollbar {
+      width: 7px;
+    }
+
+    #messages::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #messages::-webkit-scrollbar-thumb {
+      background: rgba(120, 120, 128, 0.4);
+      border-radius: 4px;
+    }
+
+    #messages::-webkit-scrollbar-thumb:hover {
+      background: rgba(120, 120, 128, 0.6);
+    }
 
     /* --- Context Trail (shows what was attached to a sent message) --- */
     .msg-context-trail {
@@ -321,7 +400,11 @@
       justify-content: center;
       opacity: 0.8;
     }
-    .context-trail-icon svg { width: 100%; height: 100%; }
+
+    .context-trail-icon svg {
+      width: 100%;
+      height: 100%;
+    }
 
     .context-trail-label {
       overflow: hidden;
@@ -343,14 +426,19 @@
     /* --- User Input (Right Aligned, Muted) --- */
     .msg.user {
       align-self: flex-end;
-      text-align: right; /* Aligns the text itself to the right */
-      background: transparent; /* No bubble */
-      color: #a1a1aa; /* Elegant muted gray */
-      padding: 0 16px 0 0; /* Padding on the right */
-      border-right: 2px solid rgba(255, 255, 255, 0.15); /* Subtle anchor line */
+      text-align: right;
+      /* Aligns the text itself to the right */
+      background: transparent;
+      /* No bubble */
+      color: #a1a1aa;
+      /* Elegant muted gray */
+      padding: 0 16px 0 0;
+      /* Padding on the right */
+      border-right: 2px solid rgba(255, 255, 255, 0.15);
+      /* Subtle anchor line */
       box-shadow: none;
       border-radius: 0;
-      
+
       /* Cinematic horizontal slide-in */
       opacity: 0;
       transform-origin: center right;
@@ -362,15 +450,18 @@
       align-self: flex-start;
       text-align: left;
       /* Soft gradient that fades into transparency, creating a glow without a box */
-      background: linear-gradient(90deg, rgba(193, 49, 206, 0.099) 0%, transparent 100%);
-      color: #f2f2f7; /* High contrast text */
-      padding: 6px 16px 6px 16px; /* Padding on the left */
-      border-left: 2px solid #b5b5b585; /* Sicily Navigator purple accent */
+      background: linear-gradient(90deg, rgb(33, 33, 33) 0%, transparent 100%);
+      color: #f2f2f7;
+      /* High contrast text */
+      padding: 6px 16px 6px 16px;
+      /* Padding on the left */
+      border-left: 2px solid #3a3a3a85;
+      /* Sicily Navigator purple accent */
       box-shadow: none;
       border-radius: 0;
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
-      
+
       /* Cinematic horizontal slide-in */
       opacity: 0;
       transform-origin: center left;
@@ -387,31 +478,74 @@
     .msg.ai p {
       margin: 0 0 8px 0;
     }
-    .msg.ai p:last-child { margin-bottom: 0; }
 
-    .msg.ai h1, .msg.ai h2, .msg.ai h3 {
+    .msg.ai p:last-child {
+      margin-bottom: 0;
+    }
+
+    .msg.ai h1,
+    .msg.ai h2,
+    .msg.ai h3 {
       margin: 12px 0 6px 0;
       font-weight: 600;
       color: #f2f2f7;
       line-height: 1.3;
     }
-    .msg.ai h1:first-child, .msg.ai h2:first-child, .msg.ai h3:first-child { margin-top: 0; }
-    .msg.ai h1 { font-size: 16px; }
-    .msg.ai h2 { font-size: 15px; }
-    .msg.ai h3 { font-size: 14px; }
 
-    .msg.ai strong { font-weight: 700; color: #ffffff; }
-    .msg.ai em { font-style: italic; }
+    .msg.ai h1:first-child,
+    .msg.ai h2:first-child,
+    .msg.ai h3:first-child {
+      margin-top: 0;
+    }
 
-    .msg.ai ul, .msg.ai ol {
+    .msg.ai h1 {
+      font-size: 16px;
+    }
+
+    .msg.ai h2 {
+      font-size: 15px;
+    }
+
+    .msg.ai h3 {
+      font-size: 14px;
+    }
+
+    .msg.ai strong {
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .msg.ai em {
+      font-style: italic;
+    }
+
+    .msg.ai ul,
+    .msg.ai ol {
       margin: 0 0 8px 0;
       padding-left: 20px;
     }
-    .msg.ai ul:last-child, .msg.ai ol:last-child { margin-bottom: 0; }
-    .msg.ai li { margin: 3px 0; }
-    .msg.ai ul { list-style-type: disc; }
-    .msg.ai ul li::marker { color: #db5ce6; }
-    .msg.ai ol li::marker { color: #db5ce6; font-weight: 600; }
+
+    .msg.ai ul:last-child,
+    .msg.ai ol:last-child {
+      margin-bottom: 0;
+    }
+
+    .msg.ai li {
+      margin: 3px 0;
+    }
+
+    .msg.ai ul {
+      list-style-type: disc;
+    }
+
+    .msg.ai ul li::marker {
+      color: #db5ce6;
+    }
+
+    .msg.ai ol li::marker {
+      color: #db5ce6;
+      font-weight: 600;
+    }
 
     .msg.ai code {
       font-family: "SF Mono", Menlo, Consolas, monospace;
@@ -433,6 +567,7 @@
       backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
     }
+
     .msg.ai pre code {
       background: transparent;
       border: none;
@@ -449,6 +584,7 @@
       border-bottom: 1px solid rgba(230, 122, 226, 0.4);
       transition: border-color 0.15s ease, color 0.15s ease;
     }
+
     .msg.ai a:hover {
       color: #f2a0ee;
       border-bottom-color: rgba(242, 160, 238, 0.7);
@@ -463,19 +599,34 @@
       padding: 0;
       font-size: 11px;
       letter-spacing: 0.5px;
-      text-transform: uppercase; /* highly modern label look */
+      text-transform: uppercase;
+      /* highly modern label look */
       text-align: center;
     }
 
     /* --- Timeline Entry Animations --- */
     @keyframes timelineInRight {
-      from { opacity: 0; transform: translateX(12px); }
-      to { opacity: 1; transform: translateX(0); }
+      from {
+        opacity: 0;
+        transform: translateX(12px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
     }
 
     @keyframes timelineInLeft {
-      from { opacity: 0; transform: translateX(-12px); }
-      to { opacity: 1; transform: translateX(0); }
+      from {
+        opacity: 0;
+        transform: translateX(-12px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateX(0);
+      }
     }
 
     /* --- Action Row & Inputs --- */
@@ -522,9 +673,18 @@
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
     }
 
-    #send-btn:hover:not(:disabled) { background: rgba(94, 92, 230, 0.28); }
-    #send-btn:active:not(:disabled) { transform: scale(0.96); }
-    #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    #send-btn:hover:not(:disabled) {
+      background: rgba(94, 92, 230, 0.28);
+    }
+
+    #send-btn:active:not(:disabled) {
+      transform: scale(0.96);
+    }
+
+    #send-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
 
     /* Scanning scanline for busy state (Matches content_script.js) */
     .wrap::before {
@@ -545,8 +705,13 @@
     }
 
     @keyframes scanLine {
-      0% { transform: translateY(-100%); }
-      100% { transform: translateY(100%); }
+      0% {
+        transform: translateY(-100%);
+      }
+
+      100% {
+        transform: translateY(100%);
+      }
     }
 
     /* --- Drag and Drop Glass Overlay --- */
@@ -590,7 +755,8 @@
       color: #a1a1aa;
       font-size: 14px;
       font-weight: 500;
-      pointer-events: none; /* Crucial to prevent flickering drop bugs */
+      pointer-events: none;
+      /* Crucial to prevent flickering drop bugs */
     }
 
     .zone-box svg {
@@ -612,6 +778,7 @@
       background: linear-gradient(135deg, rgba(193, 49, 206, 0.099) 0%, rgba(25, 25, 26, 0.35) 100%);
       box-shadow: 0 0 20px rgba(193, 49, 206, 0.15);
     }
+
     #zone-context:hover .zone-box svg {
       transform: scale(1.1);
       color: #e67ae2;
@@ -637,11 +804,22 @@
       z-index: 2;
     }
 
-    #context-shelf::-webkit-scrollbar { width: 6px; }
-    #context-shelf::-webkit-scrollbar-track { background: transparent; }
-    #context-shelf::-webkit-scrollbar-thumb { background: rgba(120, 120, 128, 0.4); border-radius: 4px; }
+    #context-shelf::-webkit-scrollbar {
+      width: 6px;
+    }
 
-    #context-shelf.hidden { display: none; }
+    #context-shelf::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #context-shelf::-webkit-scrollbar-thumb {
+      background: rgba(120, 120, 128, 0.4);
+      border-radius: 4px;
+    }
+
+    #context-shelf.hidden {
+      display: none;
+    }
 
     /* --- Card (collapsed = Gemini pill, expanded = detail card) --- */
     .context-chip {
@@ -672,9 +850,20 @@
     }
 
     @keyframes chipPopIn {
-      0% { opacity: 0; transform: translateY(10px) scale(0.85); }
-      60% { opacity: 1; transform: translateY(-2px) scale(1.03); }
-      100% { opacity: 1; transform: translateY(0) scale(1); }
+      0% {
+        opacity: 0;
+        transform: translateY(10px) scale(0.85);
+      }
+
+      60% {
+        opacity: 1;
+        transform: translateY(-2px) scale(1.03);
+      }
+
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
     }
 
     /* Hover: lift up a little, glow */
@@ -687,7 +876,9 @@
         inset 0 0 1px rgba(255, 255, 255, 0.15);
     }
 
-    .context-chip:active { transform: translateY(-1px) scale(0.98); }
+    .context-chip:active {
+      transform: translateY(-1px) scale(0.98);
+    }
 
     /* Expanded state: grow into a full detail card */
     .context-chip.expanded {
@@ -699,7 +890,9 @@
         inset 0 0 1px rgba(255, 255, 255, 0.15);
     }
 
-    .context-chip.expanded:hover { transform: translateY(-2px); }
+    .context-chip.expanded:hover {
+      transform: translateY(-2px);
+    }
 
     /* --- Header row (always visible): icon + label + close --- */
     .context-chip-head {
@@ -720,8 +913,15 @@
       opacity: 0.9;
       transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    .context-chip-icon svg { width: 100%; height: 100%; }
-    .context-chip.expanded .context-chip-icon { transform: rotate(-8deg) scale(1.05); }
+
+    .context-chip-icon svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .context-chip.expanded .context-chip-icon {
+      transform: rotate(-8deg) scale(1.05);
+    }
 
     .context-chip-label {
       flex: 1;
@@ -744,8 +944,16 @@
       color: rgba(255, 255, 255, 0.45);
       transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    .context-chip-caret svg { width: 100%; height: 100%; }
-    .context-chip.expanded .context-chip-caret { transform: rotate(180deg); color: var(--chip-accent); }
+
+    .context-chip-caret svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .context-chip.expanded .context-chip-caret {
+      transform: rotate(180deg);
+      color: var(--chip-accent);
+    }
 
     .context-close {
       flex-shrink: 0;
@@ -762,12 +970,16 @@
       line-height: 1;
       transition: color 0.15s, background-color 0.15s, transform 0.15s;
     }
+
     .context-close:hover {
       color: #ff453a;
       background: rgba(255, 69, 58, 0.12);
       transform: scale(1.15);
     }
-    .context-close:active { transform: scale(0.9); }
+
+    .context-close:active {
+      transform: scale(0.9);
+    }
 
     /* --- Expandable body: full text, smooth grow --- */
     .context-chip-body {
@@ -802,8 +1014,69 @@
       overflow-y: auto;
     }
 
-    .context-chip-text::-webkit-scrollbar { width: 5px; }
-    .context-chip-text::-webkit-scrollbar-thumb { background: rgba(120, 120, 128, 0.4); border-radius: 4px; }
+    .context-chip-text::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .context-chip-text::-webkit-scrollbar-thumb {
+      background: rgba(120, 120, 128, 0.4);
+      border-radius: 4px;
+    }
+
+    /* --- Reusable Glass Notification System --- */
+    #notification-container {
+      position: absolute;
+      top: 55px;
+      /* Floats perfectly just under the main header */
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+      width: 90%;
+      max-width: 320px;
+      z-index: 9999;
+      /* Float over everything */
+      pointer-events: none;
+      /* Allows clicks to pass through empty space */
+    }
+
+    .glass-notification {
+      pointer-events: auto;
+      /* Allows clicking close or interacting if needed */
+      width: 100%;
+      padding: 10px 16px;
+      border-radius: 12px;
+
+      /* Matching your premium Glassmorphism settings */
+      background: rgba(25, 25, 26, 0.55);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.4),
+        inset 0 0 1px rgba(255, 255, 255, 0.1);
+
+      color: #f2f2f7;
+      font-size: 12.5px;
+      font-weight: 500;
+      text-align: center;
+      line-height: 1.4;
+
+      /* Smooth transitions */
+      opacity: 0;
+      transform: translateY(-8px) scale(0.95);
+      transition:
+        opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    /* Animation states */
+    .glass-notification.show {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
   </style>
 </head>
 
@@ -814,14 +1087,18 @@
     <div id="drag-overlay">
       <div class="drop-zone" id="zone-collections">
         <div class="zone-box">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
           <span>Add to Collections</span>
           <span class="sub-label">(Coming Soon)</span>
         </div>
       </div>
       <div class="drop-zone" id="zone-context">
         <div class="zone-box">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
           <span>Add to Context</span>
         </div>
       </div>
@@ -834,7 +1111,8 @@
           <button id="quick-actions-btn" title="Quick actions">
             <span>Quick Actions</span>
             <svg viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                stroke-linejoin="round" />
             </svg>
           </button>
           <div id="quick-actions-bridge"></div>
@@ -842,9 +1120,11 @@
             <button class="qa-item" data-action="summarise-page">
               <span class="qa-icon">
                 <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M4 3.5h9l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-                  <path d="M13 3.5v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-                  <path d="M6.5 10.5h7M6.5 13h7M6.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                  <path d="M4 3.5h9l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z" stroke="currentColor"
+                    stroke-width="1.4" stroke-linejoin="round" />
+                  <path d="M13 3.5v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                  <path d="M6.5 10.5h7M6.5 13h7M6.5 8h3" stroke="currentColor" stroke-width="1.4"
+                    stroke-linecap="round" />
                 </svg>
               </span>
               <span>Summarise Page</span>
@@ -852,10 +1132,10 @@
             <button class="qa-item" data-action="organise-tabs">
               <span class="qa-icon">
                 <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="2.5" y="4" width="6" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4"/>
-                  <rect x="11.5" y="4" width="6" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4"/>
-                  <rect x="2.5" y="11" width="6" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4"/>
-                  <rect x="11.5" y="11" width="6" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4"/>
+                  <rect x="2.5" y="4" width="6" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" />
+                  <rect x="11.5" y="4" width="6" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" />
+                  <rect x="2.5" y="11" width="6" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" />
+                  <rect x="11.5" y="11" width="6" height="5" rx="1.2" stroke="currentColor" stroke-width="1.4" />
                 </svg>
               </span>
               <span>Organise Tabs</span>
@@ -863,9 +1143,9 @@
             <button class="qa-item" data-action="find-more-like-this">
               <span class="qa-icon">
                 <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" stroke-width="1.4"/>
-                  <path d="M15.5 15.5L12.3 12.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-                  <path d="M8.5 6v5M6 8.5h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                  <circle cx="8.5" cy="8.5" r="5" stroke="currentColor" stroke-width="1.4" />
+                  <path d="M15.5 15.5L12.3 12.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
+                  <path d="M8.5 6v5M6 8.5h5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
                 </svg>
               </span>
               <span>Find More Like This</span>
@@ -874,7 +1154,9 @@
             <button class="qa-item" data-action="reading-lists">
               <span class="qa-icon">
                 <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M5 3.5h10a.5.5 0 0 1 .5.5v12.3a.3.3 0 0 1-.46.25L10 13.8l-5.04 2.75a.3.3 0 0 1-.46-.25V4a.5.5 0 0 1 .5-.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                  <path
+                    d="M5 3.5h10a.5.5 0 0 1 .5.5v12.3a.3.3 0 0 1-.46.25L10 13.8l-5.04 2.75a.3.3 0 0 1-.46-.25V4a.5.5 0 0 1 .5-.5z"
+                    stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
                 </svg>
               </span>
               <span>Your Reading Lists</span>
@@ -882,9 +1164,10 @@
             <button class="qa-item" data-action="saved-collections">
               <span class="qa-icon">
                 <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M6 3.5h5.5L15 7v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-                  <path d="M11 3.5V7h3.5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-                  <path d="M7.5 10.5h5M7.5 13h3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                  <path d="M6 3.5h5.5L15 7v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z" stroke="currentColor"
+                    stroke-width="1.4" stroke-linejoin="round" />
+                  <path d="M11 3.5V7h3.5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
+                  <path d="M7.5 10.5h5M7.5 13h3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
                 </svg>
               </span>
               <span>Saved Collections</span>
