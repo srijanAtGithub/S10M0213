@@ -25,14 +25,9 @@ function addMessage(text, role) {
   const el = document.createElement("div");
   el.className = `msg ${role}`;
 
-  if (role === "ai") {
-    // AI replies are asked to format with markdown — render it.
-    // User/system text stays as plain textContent (safer, and it's
-    // literal input, not something meant to be styled).
-    el.innerHTML = renderMarkdown(text);
-  } else {
-    el.textContent = text;
-  }
+  // Plain text for both AI and user/system messages — no markdown
+  // parsing or HTML rendering involved.
+  el.textContent = text;
 
   messagesEl.appendChild(el);
 
@@ -40,126 +35,6 @@ function addMessage(text, role) {
   requestAnimationFrame(() => {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   });
-}
-
-// ── Minimal Markdown Renderer ────────────────────────────────────────
-// Small, dependency-free subset covering what chat replies actually use:
-// headings, bold/italic, inline code, fenced code blocks, links,
-// bullet/numbered lists, and paragraph breaks. HTML is escaped FIRST,
-// so raw markup in the model's output can never inject into the DOM —
-// only the tags this function deliberately adds ever render.
-function escapeHtml(str) {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function renderInlineMarkdown(text) {
-  let out = escapeHtml(text);
-
-  // Inline code: `code`
-  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // Bold: **text** or __text__
-  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  out = out.replace(/__([^_]+)__/g, '<strong>$1</strong>');
-
-  // Italic: *text* or _text_ (after bold, so ** isn't eaten by *)
-  out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  out = out.replace(/(^|[^\w])_([^_]+)_(?!\w)/g, '$1<em>$2</em>');
-
-  // Links: [label](url) — only allow http(s) targets
-  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
-
-  return out;
-}
-
-function renderMarkdown(raw) {
-  if (!raw) return "";
-
-  const lines = raw.replace(/\r\n/g, "\n").split("\n");
-  const htmlParts = [];
-
-  let inCodeBlock = false;
-  let codeLines = [];
-  let listBuffer = [];
-  let listType = null; // "ul" | "ol"
-
-  function flushList() {
-    if (!listBuffer.length) return;
-    const tag = listType === "ol" ? "ol" : "ul";
-    htmlParts.push(`<${tag}>` + listBuffer.map(li => `<li>${renderInlineMarkdown(li)}</li>`).join("") + `</${tag}>`);
-    listBuffer = [];
-    listType = null;
-  }
-
-  for (const line of lines) {
-    // Fenced code blocks: ```
-    if (/^```/.test(line.trim())) {
-      if (!inCodeBlock) {
-        flushList();
-        inCodeBlock = true;
-        codeLines = [];
-      } else {
-        htmlParts.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
-        inCodeBlock = false;
-      }
-      continue;
-    }
-    if (inCodeBlock) {
-      codeLines.push(line);
-      continue;
-    }
-
-    const trimmed = line.trim();
-
-    if (trimmed === "") {
-      flushList();
-      continue;
-    }
-
-    // Headings: #, ##, ###
-    const headingMatch = /^(#{1,3})\s+(.*)$/.exec(trimmed);
-    if (headingMatch) {
-      flushList();
-      const level = headingMatch[1].length;
-      htmlParts.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
-      continue;
-    }
-
-    // Bullet list items: -, *, •
-    const bulletMatch = /^[-*•]\s+(.*)$/.exec(trimmed);
-    if (bulletMatch) {
-      if (listType && listType !== "ul") flushList();
-      listType = "ul";
-      listBuffer.push(bulletMatch[1]);
-      continue;
-    }
-
-    // Numbered list items: 1. , 2. , etc.
-    const orderedMatch = /^\d+\.\s+(.*)$/.exec(trimmed);
-    if (orderedMatch) {
-      if (listType && listType !== "ol") flushList();
-      listType = "ol";
-      listBuffer.push(orderedMatch[1]);
-      continue;
-    }
-
-    // Plain paragraph line
-    flushList();
-    htmlParts.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
-  }
-
-  // Close out any dangling code block or list at end of input
-  if (inCodeBlock && codeLines.length) {
-    htmlParts.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
-  }
-  flushList();
-
-  return htmlParts.join("");
 }
 
 // Renders the context snippets that accompanied a sent message, as small

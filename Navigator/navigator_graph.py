@@ -81,9 +81,8 @@ async def chat_node(state: NavigatorState) -> dict:
             "'that', 'summarise this', or ask a question with no other subject, "
             "resolve it against that attached content immediately; do not ask "
             "them to clarify what they mean.\n\n"
-            "Provide helpful, concise, and insightful answers. Format your "
-            "responses cleanly using markdown (headings, bold, bullet lists, "
-            "code blocks where relevant)."
+            "Provide helpful, concise, and insightful answers as plain text "
+            "(no markdown formatting)."
         )
     )
 
