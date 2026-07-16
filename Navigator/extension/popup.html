@@ -1223,11 +1223,11 @@
 
     .organise-card {
       width: 100%;
-      max-width: 280px;
+      max-width: 380px;
       border-radius: 20px;
       border: 1px solid rgba(255, 255, 255, 0.12);
       background: rgba(30, 30, 32, 0.85);
-      backdrop-filter: blur(30px);
+      backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(30px);
       box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
       padding: 20px;
@@ -1358,9 +1358,6 @@
     <!-- --- Organise Tabs Glass Overlay --- -->
     <div id="organise-tabs-overlay">
       <div class="organise-card">
-        <div class="organise-header">Organise Tabs</div>
-        <div class="organise-sub">Group your active browser tabs using Sicily AI. Choose which tabs to include:</div>
-
         <button class="organise-option-btn" id="btn-include-grouped">
           <div class="btn-title">Include grouped tabs</div>
           <div class="btn-desc">Organise all currently open tabs in this window</div>
@@ -1368,10 +1365,8 @@
 
         <button class="organise-option-btn" id="btn-only-ungrouped">
           <div class="btn-title">Only ungrouped tabs</div>
-          <div class="btn-desc">Leave existing groups untouched and organise the rest</div>
+          <div class="btn-desc">Organise the ungrouped tabs only</div>
         </button>
-
-        <button class="organise-cancel-btn" id="btn-organise-cancel">Cancel</button>
       </div>
     </div>
 

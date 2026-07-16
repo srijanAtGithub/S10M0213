@@ -21,7 +21,6 @@ const disconnectedScreen = document.getElementById("disconnected-screen");
 const organiseTabsOverlay = document.getElementById("organise-tabs-overlay");
 const btnIncludeGrouped = document.getElementById("btn-include-grouped");
 const btnOnlyUngrouped = document.getElementById("btn-only-ungrouped");
-const btnOrganiseCancel = document.getElementById("btn-organise-cancel");
 
 let attachedContexts = [];
 
@@ -536,7 +535,10 @@ function hideOrganiseTabsOverlay() {
   organiseTabsOverlay.classList.remove("active");
 }
 
-btnOrganiseCancel.addEventListener("click", hideOrganiseTabsOverlay);
+// Close overlay when clicking the backdrop (outside the card)
+organiseTabsOverlay.addEventListener("click", (e) => {
+  if (!e.target.closest(".organise-card")) hideOrganiseTabsOverlay();
+});
 
 async function startOrganiseTabs(includeGrouped) {
   hideOrganiseTabsOverlay();
