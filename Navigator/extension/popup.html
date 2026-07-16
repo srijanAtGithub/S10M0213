@@ -275,9 +275,63 @@
     #messages::-webkit-scrollbar-thumb { background: rgba(120, 120, 128, 0.4); border-radius: 4px; }
     #messages::-webkit-scrollbar-thumb:hover { background: rgba(120, 120, 128, 0.6); }
 
+    /* --- Context Trail (shows what was attached to a sent message) --- */
+    .msg-context-trail {
+      align-self: flex-end;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 5px;
+      max-width: 90%;
+      margin-bottom: -2px;
+      position: relative;
+      z-index: 2;
+      opacity: 0;
+      animation: timelineInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    .context-trail-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 10.5px;
+      font-weight: 500;
+      color: #a1a1aa;
+      max-width: 220px;
+      cursor: default;
+      transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+    }
+
+    .context-trail-chip:hover {
+      border-color: rgba(255, 255, 255, 0.28);
+      color: #d8d8de;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .context-trail-icon {
+      flex-shrink: 0;
+      width: 11px;
+      height: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.8;
+    }
+    .context-trail-icon svg { width: 100%; height: 100%; }
+
+    .context-trail-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     /* --- Base Timeline Typography --- */
     .msg {
-      max-width: 90%;
+      max-width: 100%;
       font-size: 14px;
       line-height: 1.65;
       white-space: pre-wrap;
@@ -310,8 +364,8 @@
       /* Soft gradient that fades into transparency, creating a glow without a box */
       background: linear-gradient(90deg, rgba(193, 49, 206, 0.099) 0%, transparent 100%);
       color: #f2f2f7; /* High contrast text */
-      padding: 6px 0 6px 16px; /* Padding on the left */
-      border-left: 2px solid #db5ce685; /* Sicily Navigator purple accent */
+      padding: 6px 16px 6px 16px; /* Padding on the left */
+      border-left: 2px solid #b5b5b585; /* Sicily Navigator purple accent */
       box-shadow: none;
       border-radius: 0;
       backdrop-filter: none;
@@ -321,6 +375,83 @@
       opacity: 0;
       transform-origin: center left;
       animation: timelineInLeft 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+
+    /* --- Rendered markdown inside AI messages --- */
+    .msg.ai {
+      /* Overrides base .msg's pre-wrap: content is now real HTML
+         (p/li/pre elements) which already handles its own line breaks. */
+      white-space: normal;
+    }
+
+    .msg.ai p {
+      margin: 0 0 8px 0;
+    }
+    .msg.ai p:last-child { margin-bottom: 0; }
+
+    .msg.ai h1, .msg.ai h2, .msg.ai h3 {
+      margin: 12px 0 6px 0;
+      font-weight: 600;
+      color: #f2f2f7;
+      line-height: 1.3;
+    }
+    .msg.ai h1:first-child, .msg.ai h2:first-child, .msg.ai h3:first-child { margin-top: 0; }
+    .msg.ai h1 { font-size: 16px; }
+    .msg.ai h2 { font-size: 15px; }
+    .msg.ai h3 { font-size: 14px; }
+
+    .msg.ai strong { font-weight: 700; color: #ffffff; }
+    .msg.ai em { font-style: italic; }
+
+    .msg.ai ul, .msg.ai ol {
+      margin: 0 0 8px 0;
+      padding-left: 20px;
+    }
+    .msg.ai ul:last-child, .msg.ai ol:last-child { margin-bottom: 0; }
+    .msg.ai li { margin: 3px 0; }
+    .msg.ai ul { list-style-type: disc; }
+    .msg.ai ul li::marker { color: #db5ce6; }
+    .msg.ai ol li::marker { color: #db5ce6; font-weight: 600; }
+
+    .msg.ai code {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 1px 5px;
+      border-radius: 5px;
+      color: #e6b95a;
+    }
+
+    .msg.ai pre {
+      margin: 6px 0 10px 0;
+      padding: 10px 12px;
+      background: rgba(10, 10, 12, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 10px;
+      overflow-x: auto;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    .msg.ai pre code {
+      background: transparent;
+      border: none;
+      padding: 0;
+      color: #d8d8de;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre;
+    }
+
+    .msg.ai a {
+      color: #e67ae2;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(230, 122, 226, 0.4);
+      transition: border-color 0.15s ease, color 0.15s ease;
+    }
+    .msg.ai a:hover {
+      color: #f2a0ee;
+      border-bottom-color: rgba(242, 160, 238, 0.7);
     }
 
     /* --- System/Status Messages --- */
@@ -491,50 +622,188 @@
       opacity: 0.5;
     }
 
-    /* --- The Glassy Context Shelf --- */
+    /* --- The Glassy Context Shelf (Gemini-style attachment tray) --- */
     #context-shelf {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
-      padding: 8px 12px;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 10px 12px;
       background: rgba(10, 10, 12, 0.4);
       border-top: 1px solid rgba(255, 255, 255, 0.06);
-      max-height: 90px;
+      max-height: 220px;
       overflow-y: auto;
+      position: relative;
+      z-index: 2;
     }
+
+    #context-shelf::-webkit-scrollbar { width: 6px; }
+    #context-shelf::-webkit-scrollbar-track { background: transparent; }
+    #context-shelf::-webkit-scrollbar-thumb { background: rgba(120, 120, 128, 0.4); border-radius: 4px; }
 
     #context-shelf.hidden { display: none; }
 
+    /* --- Card (collapsed = Gemini pill, expanded = detail card) --- */
     .context-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11.5px;
-      color: #f2f2f7;
-      background: rgba(193, 49, 206, 0.08); 
-      border: 1px solid rgba(219, 92, 230, 0.25);
-      padding: 3px 8px;
-      border-radius: 6px;
-      max-width: 180px;
-      white-space: nowrap;
-      text-overflow: ellipsis;
+      --chip-accent: #c7c7cc;
+      display: flex;
+      flex-direction: column;
+      max-width: 220px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 14px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.25),
+        inset 0 0 1px rgba(255, 255, 255, 0.1);
+      cursor: pointer;
       overflow: hidden;
-      animation: timelineInLeft 0.25s ease-out;
+      transform-origin: bottom center;
+
+      /* Bouncy pop-in entrance, Gemini-esque */
+      animation: chipPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+
+      transition:
+        transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+        box-shadow 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+        border-color 0.2s ease,
+        max-width 0.32s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
-    .context-chip span {
+    @keyframes chipPopIn {
+      0% { opacity: 0; transform: translateY(10px) scale(0.85); }
+      60% { opacity: 1; transform: translateY(-2px) scale(1.03); }
+      100% { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Hover: lift up a little, glow */
+    .context-chip:hover {
+      transform: translateY(-3px);
+      border-color: rgba(255, 255, 255, 0.32);
+      box-shadow:
+        0 8px 18px rgba(0, 0, 0, 0.35),
+        0 0 18px rgba(255, 255, 255, 0.1),
+        inset 0 0 1px rgba(255, 255, 255, 0.15);
+    }
+
+    .context-chip:active { transform: translateY(-1px) scale(0.98); }
+
+    /* Expanded state: grow into a full detail card */
+    .context-chip.expanded {
+      max-width: 320px;
+      border-color: rgba(255, 255, 255, 0.32);
+      box-shadow:
+        0 10px 24px rgba(0, 0, 0, 0.4),
+        0 0 22px rgba(255, 255, 255, 0.08),
+        inset 0 0 1px rgba(255, 255, 255, 0.15);
+    }
+
+    .context-chip.expanded:hover { transform: translateY(-2px); }
+
+    /* --- Header row (always visible): icon + label + close --- */
+    .context-chip-head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 6px 6px 9px;
+    }
+
+    .context-chip-icon {
+      flex-shrink: 0;
+      width: 15px;
+      height: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--chip-accent);
+      opacity: 0.9;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .context-chip-icon svg { width: 100%; height: 100%; }
+    .context-chip.expanded .context-chip-icon { transform: rotate(-8deg) scale(1.05); }
+
+    .context-chip-label {
+      flex: 1;
+      min-width: 0;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: #f2f2f7;
+      white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
+    .context-chip-caret {
+      flex-shrink: 0;
+      width: 9px;
+      height: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.45);
+      transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .context-chip-caret svg { width: 100%; height: 100%; }
+    .context-chip.expanded .context-chip-caret { transform: rotate(180deg); color: var(--chip-accent); }
 
     .context-close {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
       cursor: pointer;
       font-weight: bold;
       color: rgba(255, 255, 255, 0.4);
       font-size: 13px;
-      transition: color 0.1s;
+      line-height: 1;
+      transition: color 0.15s, background-color 0.15s, transform 0.15s;
     }
-    .context-close:hover { color: #ff453a; }
+    .context-close:hover {
+      color: #ff453a;
+      background: rgba(255, 69, 58, 0.12);
+      transform: scale(1.15);
+    }
+    .context-close:active { transform: scale(0.9); }
+
+    /* --- Expandable body: full text, smooth grow --- */
+    .context-chip-body {
+      display: grid;
+      grid-template-rows: 0fr;
+      opacity: 0;
+      transition:
+        grid-template-rows 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+        opacity 0.22s ease;
+    }
+
+    .context-chip.expanded .context-chip-body {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+
+    .context-chip-body-inner {
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .context-chip-text {
+      margin: 0 9px 9px 9px;
+      padding-top: 7px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: #d8d8de;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 140px;
+      overflow-y: auto;
+    }
+
+    .context-chip-text::-webkit-scrollbar { width: 5px; }
+    .context-chip-text::-webkit-scrollbar-thumb { background: rgba(120, 120, 128, 0.4); border-radius: 4px; }
   </style>
 </head>
 

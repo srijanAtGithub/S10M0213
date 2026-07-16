@@ -22,6 +22,36 @@ class NavigatorState(TypedDict):
     context_snippets: list[str] # Add the snippets parameter to the state array
 
 
+def _build_turn_text(user_text: str, snippets: list[str]) -> str:
+    """
+    Folds any attached context snippets directly into THIS turn's human
+    message, framed the same way a person would if they pasted text and
+    then asked about it in the same breath.
+
+    Why not the system prompt: putting snippets in the system prompt
+    frames them as standing background material ("here's some reference
+    info, keep it in mind"), not as the thing the user's very next word
+    ("this", "that", "summarise this") refers to. Models — like people —
+    resolve "this" against what's in front of them in the current turn,
+    not against a pile of config-like context sitting above the whole
+    conversation. Attaching it to the turn removes the ambiguity that
+    was causing "what would you like me to summarize?" replies.
+    """
+    if not snippets:
+        return user_text
+
+    if len(snippets) == 1:
+        attached_block = f'--- Attached content ---\n{snippets[0]}\n--- End attached content ---'
+    else:
+        parts = [f"[{i}] {s}" for i, s in enumerate(snippets, 1)]
+        attached_block = "--- Attached content ---\n" + "\n\n".join(parts) + "\n--- End attached content ---"
+
+    # The snippet(s) come first, then the user's own words — mirroring how
+    # someone pastes something and then asks about it, so "this"/"it" in
+    # the user's text has an unambiguous, immediately-preceding referent.
+    return f"{attached_block}\n\n{user_text}"
+
+
 # ── The Chat Node Logic ─────────────────────────────────────────────────
 async def chat_node(state: NavigatorState) -> dict:
     llm = configuration.get_writing_tool_llm()
@@ -30,22 +60,34 @@ async def chat_node(state: NavigatorState) -> dict:
     title = state.get("page_title") or "Unknown"
     snippets = state.get("context_snippets") or []
 
-    # Map selected snippets into a clean, itemized list format
-    snippets_block = ""
-    if snippets:
-        snippets_block = "\n\nCRITICAL REFERENCE CONTEXT:\nThe user has highlighted and attached the following relevant snippets from the webpage to ground your reply:\n"
-        for i, snippet in enumerate(snippets, 1):
-            snippets_block += f'[{i}] "{snippet}"\n'
+    # Fold this turn's attached snippets (if any) into the latest human
+    # message, rather than parking them in the system prompt. The system
+    # prompt stays generic/persona-only; page metadata is still useful
+    # ambient context there since it's not something "this" ever refers to.
+    messages = list(state["messages"])
+    if snippets and messages and isinstance(messages[-1], HumanMessage):
+        original_text = messages[-1].content
+        messages[-1] = HumanMessage(
+            content=_build_turn_text(original_text, snippets)
+        )
 
     system_prompt = SystemMessage(
         content=(
-            "You are a smart, premium, and highly capable assistant.\n"
-            f"{snippets_block}\n\n"
-            "Provide helpful, concise, and insightful answers. Format your responses cleanly using markdown."
+            "You are a smart, premium, and highly capable assistant embedded in a browser side panel.\n\n"
+            "When the user's message includes a block marked "
+            "'--- Attached content ---', that block is text they just selected "
+            "or dropped in specifically to ask you about — treat it as the "
+            "direct subject of their message. If they say things like 'this', "
+            "'that', 'summarise this', or ask a question with no other subject, "
+            "resolve it against that attached content immediately; do not ask "
+            "them to clarify what they mean.\n\n"
+            "Provide helpful, concise, and insightful answers. Format your "
+            "responses cleanly using markdown (headings, bold, bullet lists, "
+            "code blocks where relevant)."
         )
     )
 
-    conversation = [system_prompt] + state["messages"]
+    conversation = [system_prompt] + messages
     response = await llm.ainvoke(conversation)
 
     return {"messages": [response]}

@@ -24,10 +24,176 @@ let currentTab = { id: null, url: "", title: "" };
 function addMessage(text, role) {
   const el = document.createElement("div");
   el.className = `msg ${role}`;
-  el.textContent = text;
+
+  if (role === "ai") {
+    // AI replies are asked to format with markdown — render it.
+    // User/system text stays as plain textContent (safer, and it's
+    // literal input, not something meant to be styled).
+    el.innerHTML = renderMarkdown(text);
+  } else {
+    el.textContent = text;
+  }
+
   messagesEl.appendChild(el);
 
   // Quick fade-in layout bump
+  requestAnimationFrame(() => {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+}
+
+// ── Minimal Markdown Renderer ────────────────────────────────────────
+// Small, dependency-free subset covering what chat replies actually use:
+// headings, bold/italic, inline code, fenced code blocks, links,
+// bullet/numbered lists, and paragraph breaks. HTML is escaped FIRST,
+// so raw markup in the model's output can never inject into the DOM —
+// only the tags this function deliberately adds ever render.
+function escapeHtml(str) {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderInlineMarkdown(text) {
+  let out = escapeHtml(text);
+
+  // Inline code: `code`
+  out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Bold: **text** or __text__
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+
+  // Italic: *text* or _text_ (after bold, so ** isn't eaten by *)
+  out = out.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  out = out.replace(/(^|[^\w])_([^_]+)_(?!\w)/g, '$1<em>$2</em>');
+
+  // Links: [label](url) — only allow http(s) targets
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+
+  return out;
+}
+
+function renderMarkdown(raw) {
+  if (!raw) return "";
+
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const htmlParts = [];
+
+  let inCodeBlock = false;
+  let codeLines = [];
+  let listBuffer = [];
+  let listType = null; // "ul" | "ol"
+
+  function flushList() {
+    if (!listBuffer.length) return;
+    const tag = listType === "ol" ? "ol" : "ul";
+    htmlParts.push(`<${tag}>` + listBuffer.map(li => `<li>${renderInlineMarkdown(li)}</li>`).join("") + `</${tag}>`);
+    listBuffer = [];
+    listType = null;
+  }
+
+  for (const line of lines) {
+    // Fenced code blocks: ```
+    if (/^```/.test(line.trim())) {
+      if (!inCodeBlock) {
+        flushList();
+        inCodeBlock = true;
+        codeLines = [];
+      } else {
+        htmlParts.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+        inCodeBlock = false;
+      }
+      continue;
+    }
+    if (inCodeBlock) {
+      codeLines.push(line);
+      continue;
+    }
+
+    const trimmed = line.trim();
+
+    if (trimmed === "") {
+      flushList();
+      continue;
+    }
+
+    // Headings: #, ##, ###
+    const headingMatch = /^(#{1,3})\s+(.*)$/.exec(trimmed);
+    if (headingMatch) {
+      flushList();
+      const level = headingMatch[1].length;
+      htmlParts.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
+      continue;
+    }
+
+    // Bullet list items: -, *, •
+    const bulletMatch = /^[-*•]\s+(.*)$/.exec(trimmed);
+    if (bulletMatch) {
+      if (listType && listType !== "ul") flushList();
+      listType = "ul";
+      listBuffer.push(bulletMatch[1]);
+      continue;
+    }
+
+    // Numbered list items: 1. , 2. , etc.
+    const orderedMatch = /^\d+\.\s+(.*)$/.exec(trimmed);
+    if (orderedMatch) {
+      if (listType && listType !== "ol") flushList();
+      listType = "ol";
+      listBuffer.push(orderedMatch[1]);
+      continue;
+    }
+
+    // Plain paragraph line
+    flushList();
+    htmlParts.push(`<p>${renderInlineMarkdown(trimmed)}</p>`);
+  }
+
+  // Close out any dangling code block or list at end of input
+  if (inCodeBlock && codeLines.length) {
+    htmlParts.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+  }
+  flushList();
+
+  return htmlParts.join("");
+}
+
+// Renders the context snippets that accompanied a sent message, as small
+// read-only chips sitting just above the user's bubble in the thread.
+function addContextTrail(snippets) {
+  if (!snippets || snippets.length === 0) return;
+
+  const trail = document.createElement("div");
+  trail.className = "msg-context-trail";
+
+  snippets.forEach((text) => {
+    const chip = document.createElement("div");
+    chip.className = "context-trail-chip";
+    chip.title = text;
+
+    const icon = document.createElement("span");
+    icon.className = "context-trail-icon";
+    icon.innerHTML = `<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 3.5h9l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M13 3.5v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M6.5 10.5h7M6.5 13h7M6.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </svg>`;
+
+    const label = document.createElement("span");
+    label.className = "context-trail-label";
+    label.textContent = makeContextLabel(text);
+
+    chip.appendChild(icon);
+    chip.appendChild(label);
+    trail.appendChild(chip);
+  });
+
+  messagesEl.appendChild(trail);
+
   requestAnimationFrame(() => {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   });
@@ -123,6 +289,7 @@ async function sendMessage() {
     return;
   }
 
+  addContextTrail(attachedContexts);
   addMessage(text, "user");
   inputEl.value = "";
   setSending(true);
@@ -262,33 +429,99 @@ dragOverlay.addEventListener("drop", (e) => {
   }
 });
 
+// Tracks which chip(s) are currently expanded across re-renders,
+// so toggling one doesn't collapse everything and lose the user's place.
+let expandedContextIndices = new Set();
+
+// Builds a short one-line label from a context snippet (Gemini-style summary line)
+function makeContextLabel(text) {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  const maxLen = 42;
+  return cleaned.length > maxLen ? cleaned.slice(0, maxLen).trimEnd() + "…" : cleaned;
+}
+
 // Re-renders the graphical shelf of context chips
 function renderContextShelf() {
   contextShelf.innerHTML = "";
   if (attachedContexts.length === 0) {
     contextShelf.classList.add("hidden");
+    expandedContextIndices.clear();
     return;
   }
-  
+
   contextShelf.classList.remove("hidden");
-  
+
   attachedContexts.forEach((text, index) => {
+    const isExpanded = expandedContextIndices.has(index);
+
     const chip = document.createElement("div");
-    chip.className = "context-chip";
-    
+    chip.className = "context-chip" + (isExpanded ? " expanded" : "");
+
+    // ── Header: icon + short label + caret + close ──
+    const head = document.createElement("div");
+    head.className = "context-chip-head";
+
+    const icon = document.createElement("div");
+    icon.className = "context-chip-icon";
+    icon.innerHTML = `<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 3.5h9l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M13 3.5v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M6.5 10.5h7M6.5 13h7M6.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </svg>`;
+
     const label = document.createElement("span");
-    label.textContent = text;
-    
+    label.className = "context-chip-label";
+    label.textContent = makeContextLabel(text);
+
+    const caret = document.createElement("div");
+    caret.className = "context-chip-caret";
+    caret.innerHTML = `<svg viewBox="0 0 12 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M1 1.5L6 6.5L11 1.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+
     const closeBtn = document.createElement("div");
     closeBtn.className = "context-close";
     closeBtn.innerHTML = "&times;";
-    closeBtn.addEventListener("click", () => {
+    closeBtn.title = "Remove";
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation(); // don't trigger expand/collapse
       attachedContexts.splice(index, 1);
+      expandedContextIndices.delete(index);
       renderContextShelf();
     });
-    
-    chip.appendChild(label);
-    chip.appendChild(closeBtn);
+
+    head.appendChild(icon);
+    head.appendChild(label);
+    head.appendChild(caret);
+    head.appendChild(closeBtn);
+
+    // ── Body: full text, revealed on expand ──
+    const body = document.createElement("div");
+    body.className = "context-chip-body";
+
+    const bodyInner = document.createElement("div");
+    bodyInner.className = "context-chip-body-inner";
+
+    const fullText = document.createElement("div");
+    fullText.className = "context-chip-text";
+    fullText.textContent = text;
+
+    bodyInner.appendChild(fullText);
+    body.appendChild(bodyInner);
+
+    chip.appendChild(head);
+    chip.appendChild(body);
+
+    // Click anywhere on the card (except close) toggles expand/collapse
+    chip.addEventListener("click", () => {
+      if (expandedContextIndices.has(index)) {
+        expandedContextIndices.delete(index);
+      } else {
+        expandedContextIndices.add(index);
+      }
+      renderContextShelf();
+    });
+
     contextShelf.appendChild(chip);
   });
 }
@@ -309,6 +542,9 @@ function renderContextShelf() {
 
   const history = await loadHistory(currentTab.id);
   for (const m of history) {
+    if (m.role === "user" && Array.isArray(m.context_snippets) && m.context_snippets.length) {
+      addContextTrail(m.context_snippets);
+    }
     addMessage(m.text, m.role === "user" ? "user" : "ai");
   }
 
