@@ -34,7 +34,7 @@
       /* The "Shader" / Glowing Border Effect */
       box-shadow:
         0 12px 40px rgba(0, 0, 0, 0.45),
-        0 0 20px rgba(94, 92, 230, 0.2),
+        0 0 20px rgba(230, 168, 40, 0.2),
         inset 0 0 1px rgba(255, 255, 255, 0.1);
 
       overflow: hidden;
@@ -122,7 +122,7 @@
     }
 
     #clear-btn:hover {
-      background: rgba(94, 92, 230, 0.28);
+      background: rgba(255, 255, 255, 0.28);
     }
 
     #clear-btn:active {
@@ -162,7 +162,7 @@
 
     #quick-actions-btn:hover,
     #quick-actions.open #quick-actions-btn {
-      background: rgba(94, 92, 230, 0.28);
+      background: rgba(255, 255, 255, 0.28);
     }
 
     #quick-actions-btn:active {
@@ -194,7 +194,7 @@
       border-radius: 14px;
       box-shadow:
         0 14px 34px rgba(0, 0, 0, 0.5),
-        0 0 22px rgba(94, 92, 230, 0.15),
+        0 0 22px rgba(255, 255, 255, 0.15),
         inset 0 0 1px rgba(255, 255, 255, 0.12);
       padding: 6px;
       display: flex;
@@ -281,13 +281,13 @@
     }
 
     .qa-item:hover {
-      background: rgba(94, 92, 230, 0.22);
+      background: rgba(255, 255, 255, 0.22);
       padding-left: 13px;
     }
 
     .qa-item:active {
       transform: scale(0.97);
-      background: rgba(94, 92, 230, 0.32);
+      background: rgba(255, 255, 255, 0.32);
     }
 
     .qa-icon {
@@ -559,8 +559,8 @@
     }
 
     #input-box:focus {
-      border-color: rgba(249, 81, 165, 0.3);
-      box-shadow: 0 0 14px rgba(255, 105, 180, 0.25);
+      border-color: rgba(255, 255, 255, 0.35);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.22);
     }
 
     /* Send button — hidden by default, emerges from input on proximity */
@@ -606,7 +606,7 @@
     }
 
     #send-btn.revealed:hover:not(:disabled) {
-      background: rgba(94, 92, 230, 0.28);
+      background: rgba(255, 255, 255, 0.28);
     }
 
     #send-btn.revealed:active:not(:disabled) {
@@ -619,8 +619,13 @@
     }
 
     @keyframes sendSpin {
-      from { transform: rotate(0deg); }
-      to   { transform: rotate(360deg); }
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
     }
 
     /* Scanning scanline for busy state (Matches content_script.js) */
@@ -1171,17 +1176,16 @@
 
         <button id="send-btn" title="Send">
           <!-- send arrow icon -->
-          <svg id="send-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"
-               width="16" height="16">
-            <path d="M3 10L17 10M17 10L11.5 4.5M17 10L11.5 15.5"
-                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <svg id="send-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+            <path d="M3 10L17 10M17 10L11.5 4.5M17 10L11.5 15.5" stroke="currentColor" stroke-width="1.8"
+              stroke-linecap="round" stroke-linejoin="round" />
           </svg>
           <!-- spinner icon (hidden by default) -->
-          <svg id="send-spinner" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"
-               width="16" height="16" style="display:none;">
-            <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.8"
-                    stroke-dasharray="28" stroke-dashoffset="10" stroke-linecap="round"
-                    style="animation: sendSpin 0.8s linear infinite; transform-origin: center;"/>
+          <svg id="send-spinner" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="16"
+            height="16" style="display:none;">
+            <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.8" stroke-dasharray="28"
+              stroke-dashoffset="10" stroke-linecap="round"
+              style="animation: sendSpin 0.8s linear infinite; transform-origin: center;" />
           </svg>
         </button>
       </div>
