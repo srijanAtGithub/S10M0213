@@ -192,9 +192,13 @@ async function handleClear() {
   if (currentTab.id == null) return;
 
   const ok = await clearHistoryOnBackend(currentTab.id);
+
   if (ok) {
     clearMessagesUI();
-    addMessage("Chat cleared.", "system");
+
+    NotificationService.show(
+      "Conversation cleared."
+    );
   }
 }
 
@@ -273,6 +277,16 @@ qaItems.forEach((item) => {
 
 // ── Drag & Drop Infrastructure ─────────────────────────────────────────
 
+function setDragHoverState(targetZone) {
+  zoneContext.classList.toggle("drag-hover", targetZone === "context");
+  zoneCollections.classList.toggle("drag-hover", targetZone === "collections");
+}
+
+function clearDragHoverState() {
+  zoneContext.classList.remove("drag-hover");
+  zoneCollections.classList.remove("drag-hover");
+}
+
 // Detect a dragged item passing into the panel window
 window.addEventListener("dragenter", (e) => {
   e.preventDefault();
@@ -282,6 +296,17 @@ window.addEventListener("dragenter", (e) => {
 // Dragover must be prevented for drop events to execute properly
 dragOverlay.addEventListener("dragover", (e) => {
   e.preventDefault();
+
+  const overContext = !!e.target.closest("#zone-context");
+  const overCollections = !!e.target.closest("#zone-collections");
+
+  if (overContext) {
+    setDragHoverState("context");
+  } else if (overCollections) {
+    setDragHoverState("collections");
+  } else {
+    clearDragHoverState();
+  }
 });
 
 // Hide the drop overlay if the user drags out of the sidepanel
@@ -289,6 +314,7 @@ dragOverlay.addEventListener("dragleave", (e) => {
   // Only trigger leave if it leaves the entire overlay bounding container
   if (e.relatedTarget === null || !dragOverlay.contains(e.relatedTarget)) {
     dragOverlay.classList.remove("active");
+    clearDragHoverState();
   }
 });
 
@@ -298,13 +324,18 @@ dragOverlay.addEventListener("drop", (e) => {
   dragOverlay.classList.remove("active");
 
   const droppedText = e.dataTransfer.getData("text/plain");
-  if (!droppedText || droppedText.trim() === "") return;
+  if (!droppedText || droppedText.trim() === "") {
+    clearDragHoverState();
+    return;
+  }
 
   // Check if we dropped over the Context Zone specifically
   if (e.target.closest("#zone-context")) {
     attachedContexts.push(droppedText.trim());
     renderContextShelf();
   }
+
+  clearDragHoverState();
 });
 
 // Tracks which chip(s) are currently expanded across re-renders,

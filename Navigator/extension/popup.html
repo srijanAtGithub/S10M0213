@@ -91,16 +91,19 @@
       color: #f2f2f7;
       display: flex;
       align-items: center;
-      justify-content: space-between;
       position: relative;
-      /* FIXED: Raised z-index so dropdown works */
       z-index: 10;
     }
 
-    #header-right {
+    #header-left {
       display: flex;
       align-items: center;
+      width: 100%;
       gap: 10px;
+    }
+
+    #status-dot {
+      margin-left: auto;
     }
 
     #clear-btn {
@@ -114,6 +117,8 @@
       cursor: pointer;
       transition: background 0.15s, transform 0.1s;
       backdrop-filter: blur(20px);
+      order: 2;
+      /* Place before status dot */
     }
 
     #clear-btn:hover {
@@ -167,8 +172,8 @@
     #quick-actions-bridge {
       position: absolute;
       top: 100%;
-      right: 0;
-      /* FIXED: Matching menu width to prevent hover loss */
+      left: 0;
+      /* Changed for side-panel safety */
       min-width: 190px;
       height: 10px;
     }
@@ -176,7 +181,8 @@
     #quick-actions-menu {
       position: absolute;
       top: calc(100% + 10px);
-      right: 0;
+      left: 0;
+      /* Changed from right: 0 to prevent overflow on narrow panels */
       min-width: 190px;
 
       /* FIXED: Glassmorphism settings matching content_script.js */
@@ -200,7 +206,8 @@
       visibility: hidden;
       pointer-events: none;
       transform: translateY(-6px) scale(0.92);
-      transform-origin: top right;
+      transform-origin: top left;
+      /* Updated to match new left alignment */
       transition:
         opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
         transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
@@ -537,7 +544,7 @@
       padding: 9px 12px;
       border-radius: 10px;
       border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(30, 30, 32, 0.9);
+      background: rgba(0, 0, 0, 0.9);
       /* Solid-ish so it reads as its own floating pill against the
          busy messages list scrolling underneath it */
       backdrop-filter: blur(16px);
@@ -616,32 +623,57 @@
       position: absolute;
       inset: 0;
       z-index: 100;
-      background: rgba(10, 10, 12, 0.6);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
+      background: rgba(10, 10, 12, 0.45);
+      /* Smooth dimming layer */
+
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      align-items: center;
+      /* Centers floating panels horizontally */
+      justify-content: center;
+      /* Centers floating panels vertically */
+      gap: 20px;
       padding: 16px;
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
 
+    /* When active, the overlay becomes visible, but we let elements inside handle pointer rules */
     #drag-overlay.active {
       opacity: 1;
       pointer-events: auto;
     }
 
+    /* --- Elegant, Premium Drop Zones --- */
     .drop-zone {
-      flex: 1;
-      border: 2px dashed rgba(255, 255, 255, 0.15);
-      border-radius: 16px;
+      width: 250px;
+      height: 110px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+
+      /* Glassmorphism applied ONLY to the floating windows */
+      background: rgba(30, 30, 32, 0.55);
+      backdrop-filter: blur(25px);
+      -webkit-backdrop-filter: blur(25px);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+
+      /* CRUCIAL: Forces the zone to explicitly capture pointer interactions */
+      pointer-events: auto;
+
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
       cursor: copy;
+    }
+
+    /* CRUCIAL: Prevent internal text/icons from breaking the parent hover state */
+    .zone-box,
+    .zone-box *,
+    .sub-label {
+      pointer-events: none !important;
     }
 
     .zone-box {
@@ -650,40 +682,55 @@
       align-items: center;
       gap: 8px;
       color: #a1a1aa;
-      font-size: 14px;
+      font-size: 13.5px;
       font-weight: 500;
-      pointer-events: none;
-      /* Crucial to prevent flickering drop bugs */
     }
 
     .zone-box svg {
-      width: 28px;
-      height: 28px;
+      width: 26px;
+      height: 26px;
       opacity: 0.7;
-      transition: transform 0.2s;
-    }
-
-    /* Collections Hover State (Muted grey style) */
-    #zone-collections:hover {
-      border-color: rgba(255, 255, 255, 0.4);
-      background: rgba(25, 25, 26, 0.35);
-    }
-
-    /* Context Hover State (Matching your Orchid design) */
-    #zone-context:hover {
-      border-color: #db5ce685;
-      background: linear-gradient(135deg, rgba(193, 49, 206, 0.099) 0%, rgba(25, 25, 26, 0.35) 100%);
-      box-shadow: 0 0 20px rgba(193, 49, 206, 0.15);
-    }
-
-    #zone-context:hover .zone-box svg {
-      transform: scale(1.1);
-      color: #e67ae2;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
 
     .sub-label {
       font-size: 11px;
       opacity: 0.5;
+    }
+
+    /* --- Continuous Glowing Animations --- */
+    @keyframes subtleGlowCollections {
+      0% {
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 15px rgba(255, 255, 255, 0.03);
+      }
+
+      50% {
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 25px rgba(255, 255, 255, 0.12);
+      }
+
+      100% {
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 15px rgba(255, 255, 255, 0.03);
+      }
+    }
+
+    /* --- Drag Hover Actions --- */
+    #zone-collections.drag-hover {
+      border-color: rgba(255, 255, 255, 0.3);
+      background: rgba(50, 50, 55, 0.65);
+      transform: translateY(-2px) scale(1.02);
+      animation: subtleGlowCollections 2s infinite ease-in-out;
+    }
+
+    #zone-context.drag-hover {
+      border-color: rgba(255, 255, 255, 0.3);
+      background: rgba(50, 50, 55, 0.65);
+      transform: translateY(-2px) scale(1.02);
+      animation: subtleGlowCollections 2s infinite ease-in-out;
+    }
+
+    #zone-context.drag-hover .zone-box svg,
+    #zone-collections.drag-hover .zone-box svg {
+      transform: scale(1.15) translateY(-2px);
     }
 
     /* --- The Glassy Context Shelf (Gemini-style attachment tray) --- */
@@ -1000,8 +1047,7 @@
     </div>
 
     <div id="header">
-      <span>Sicily Navigator</span>
-      <div id="header-right">
+      <div id="header-left">
         <div id="quick-actions">
           <button id="quick-actions-btn" title="Quick actions">
             <span>Quick Actions</span>
@@ -1035,6 +1081,7 @@
               </span>
               <span>Organise Tabs</span>
             </button>
+
             <button class="qa-item" data-action="find-more-like-this">
               <span class="qa-icon">
                 <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1045,7 +1092,9 @@
               </span>
               <span>Find More Like This</span>
             </button>
+
             <div class="qa-divider"></div>
+
             <button class="qa-item" data-action="reading-lists">
               <span class="qa-icon">
                 <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1056,6 +1105,7 @@
               </span>
               <span>Your Reading Lists</span>
             </button>
+
             <button class="qa-item" data-action="saved-collections">
               <span class="qa-icon">
                 <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1069,7 +1119,11 @@
             </button>
           </div>
         </div>
-        <button id="clear-btn" title="Clear this tab's conversation">Clear</button>
+
+        <button id="clear-btn" title="Clear this tab's conversation">
+          Clear
+        </button>
+
         <span id="status-dot"></span>
       </div>
     </div>
@@ -1080,8 +1134,11 @@
       <div id="context-shelf" class="hidden"></div>
 
       <div id="input-row">
-        <input id="input-box" type="text" placeholder="Type anything..." autocomplete="off" />
-        <button id="send-btn">Send</button>
+        <input id="input-box" type="text" placeholder="Ask anything..." autocomplete="off" />
+
+        <button id="send-btn">
+          Send
+        </button>
       </div>
     </div>
   </div>

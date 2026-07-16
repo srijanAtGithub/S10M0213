@@ -173,10 +173,6 @@ class EditResult(BaseModel):
         description="The final output to return to the user, either a rewritten text or a direct answer to their question."
     )
 
-    model_config = {
-        "extra": "allow",  # Avoid PydanticSerializationUnexpectedValue warning
-    }
-
 
 import uuid
 
