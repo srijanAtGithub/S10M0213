@@ -563,6 +563,7 @@
       box-shadow: 0 0 14px rgba(255, 105, 180, 0.25);
     }
 
+    /* Send button — hidden by default, emerges from input on proximity */
     #send-btn {
       padding: 9px 15px;
       border-radius: 10px;
@@ -573,21 +574,53 @@
       font-weight: 600;
       cursor: pointer;
       backdrop-filter: blur(20px);
-      transition: transform 0.1s, background-color 0.15s;
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+
+      /* Hidden state: collapsed into the input's right edge */
+      opacity: 0;
+      transform: scaleX(0.3) scaleY(0.75) translateX(-10px);
+      transform-origin: left center;
+      pointer-events: none;
+      max-width: 0;
+      padding-left: 0;
+      padding-right: 0;
+      overflow: hidden;
+      white-space: nowrap;
+
+      transition:
+        opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1),
+        max-width 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+        padding 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+        background-color 0.15s;
     }
 
-    #send-btn:hover:not(:disabled) {
+    /* Revealed state: full button, spring-animated out */
+    #send-btn.revealed {
+      opacity: 1;
+      transform: scaleX(1) scaleY(1) translateX(0);
+      pointer-events: auto;
+      max-width: 52px;
+      padding-left: 11px;
+      padding-right: 11px;
+    }
+
+    #send-btn.revealed:hover:not(:disabled) {
       background: rgba(94, 92, 230, 0.28);
     }
 
-    #send-btn:active:not(:disabled) {
-      transform: scale(0.96);
+    #send-btn.revealed:active:not(:disabled) {
+      transform: scaleX(0.96) scaleY(0.96);
     }
 
     #send-btn:disabled {
       opacity: 0.4;
       cursor: not-allowed;
+    }
+
+    @keyframes sendSpin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
     }
 
     /* Scanning scanline for busy state (Matches content_script.js) */
@@ -1136,8 +1169,20 @@
       <div id="input-row">
         <input id="input-box" type="text" placeholder="Ask anything..." autocomplete="off" />
 
-        <button id="send-btn">
-          Send
+        <button id="send-btn" title="Send">
+          <!-- send arrow icon -->
+          <svg id="send-icon" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"
+               width="16" height="16">
+            <path d="M3 10L17 10M17 10L11.5 4.5M17 10L11.5 15.5"
+                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <!-- spinner icon (hidden by default) -->
+          <svg id="send-spinner" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"
+               width="16" height="16" style="display:none;">
+            <circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1.8"
+                    stroke-dasharray="28" stroke-dashoffset="10" stroke-linecap="round"
+                    style="animation: sendSpin 0.8s linear infinite; transform-origin: center;"/>
+          </svg>
         </button>
       </div>
     </div>

@@ -88,7 +88,11 @@ function setStatus(state) {
 
 function setSending(isSending) {
   sendBtn.disabled = isSending;
-  sendBtn.textContent = isSending ? "..." : "Send";
+
+  const icon    = document.getElementById("send-icon");
+  const spinner = document.getElementById("send-spinner");
+  if (icon)    icon.style.display    = isSending ? "none"         : "";
+  if (spinner) spinner.style.display = isSending ? "inline-block" : "none";
 
   // Sync the futuristic neural scanline effect from content_script.js!
   if (isSending) {
@@ -206,6 +210,51 @@ sendBtn.addEventListener("click", sendMessage);
 clearBtn.addEventListener("click", handleClear);
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendMessage();
+});
+
+// ── Send Button Proximity Reveal ─────────────────────────────────────────
+// The send button starts hidden. When the user moves their mouse near the
+// input box (or the bottom-right corner of the panel), we spring-animate it
+// out as if it's emerging from the text field itself.
+
+const inputRow = document.getElementById("input-row");
+const PROXIMITY_THRESHOLD = 90; // px — how close the cursor must get
+let sendBtnRevealTimer = null;
+
+function revealSendBtn() {
+  clearTimeout(sendBtnRevealTimer);
+  sendBtn.classList.add("revealed");
+}
+
+function hideSendBtn(delay = 400) {
+  clearTimeout(sendBtnRevealTimer);
+  sendBtnRevealTimer = setTimeout(() => {
+    // Don't hide if the cursor is still over the button itself
+    if (!sendBtn.matches(":hover")) {
+      sendBtn.classList.remove("revealed");
+    }
+  }, delay);
+}
+
+// Keep revealed while hovering over the button itself
+sendBtn.addEventListener("mouseenter", revealSendBtn);
+sendBtn.addEventListener("mouseleave", () => hideSendBtn(300));
+
+// Proximity detection on the whole document — fires whenever the cursor
+// is within PROXIMITY_THRESHOLD pixels of the input row's bounding rect.
+document.addEventListener("mousemove", (e) => {
+  const rect = inputRow.getBoundingClientRect();
+
+  // Compute shortest distance from cursor to the input-row rectangle
+  const dx = Math.max(rect.left - e.clientX, 0, e.clientX - rect.right);
+  const dy = Math.max(rect.top - e.clientY, 0, e.clientY - rect.bottom);
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist <= PROXIMITY_THRESHOLD) {
+    revealSendBtn();
+  } else {
+    hideSendBtn(300);
+  }
 });
 
 // ── Quick Actions menu ──────────────────────────────────────────────────
