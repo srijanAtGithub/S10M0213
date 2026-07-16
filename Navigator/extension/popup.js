@@ -17,6 +17,12 @@ const zoneCollections = document.getElementById("zone-collections");
 const contextShelf = document.getElementById("context-shelf");
 const disconnectedScreen = document.getElementById("disconnected-screen");
 
+// Organise Tabs Elements
+const organiseTabsOverlay = document.getElementById("organise-tabs-overlay");
+const btnIncludeGrouped = document.getElementById("btn-include-grouped");
+const btnOnlyUngrouped = document.getElementById("btn-only-ungrouped");
+const btnOrganiseCancel = document.getElementById("btn-organise-cancel");
+
 let attachedContexts = [];
 
 let socket = null;
@@ -107,9 +113,9 @@ function showOnline() {
 function setSending(isSending) {
   sendBtn.disabled = isSending;
 
-  const icon    = document.getElementById("send-icon");
+  const icon = document.getElementById("send-icon");
   const spinner = document.getElementById("send-spinner");
-  if (icon)    icon.style.display    = isSending ? "none"         : "";
+  if (icon) icon.style.display = isSending ? "none" : "";
   if (spinner) spinner.style.display = isSending ? "inline-block" : "none";
 
   // Sync the futuristic neural scanline effect from content_script.js!
@@ -500,6 +506,117 @@ function renderContextShelf() {
     contextShelf.appendChild(chip);
   });
 }
+
+// ORGANIZR TABS
+function handleQuickAction(action) {
+  closeQuickActions();
+
+  if (action === "organise-tabs") {
+    showOrganiseTabsOverlay();
+    return;
+  }
+
+  const labels = {
+    "summarise-page": "Summarise Page",
+    "find-more-like-this": "Find More Like This",
+    "reading-lists": "Your Reading Lists",
+    "saved-collections": "Saved Collections",
+  };
+
+  const actionName = labels[action] || action;
+  NotificationService.show(`"${actionName}" is coming soon.`);
+}
+
+// Overlay Toggle Handlers
+function showOrganiseTabsOverlay() {
+  organiseTabsOverlay.classList.add("active");
+}
+
+function hideOrganiseTabsOverlay() {
+  organiseTabsOverlay.classList.remove("active");
+}
+
+btnOrganiseCancel.addEventListener("click", hideOrganiseTabsOverlay);
+
+async function startOrganiseTabs(includeGrouped) {
+  hideOrganiseTabsOverlay();
+  NotificationService.show("Organising your tabs...");
+
+  // ── Neural glow: same busy state used during chat sends ──
+  appWrap.classList.add("busy");
+
+  try {
+    // 1. Query all tabs in the user's current window
+    const tabs = await chrome.tabs.query({ currentWindow: true });
+
+    // 2. Filter tabs based on chosen selection
+    let filteredTabs = tabs;
+    if (!includeGrouped) {
+      filteredTabs = tabs.filter(tab => tab.groupId === -1 || tab.groupId === (chrome.tabGroups ? chrome.tabGroups.TAB_GROUP_ID_NONE : -1));
+    }
+
+    if (filteredTabs.length === 0) {
+      appWrap.classList.remove("busy");
+      NotificationService.show("No tabs found that need organising.");
+      return;
+    }
+
+    // Clean data wrapper for the FastAPI payload
+    const tabData = filteredTabs.map(tab => ({
+      id: tab.id,
+      title: tab.title || "",
+      url: tab.url || "",
+      groupId: tab.groupId
+    }));
+
+    // 3. Post data to your Python FastAPI server
+    const response = await fetch(`http://${BACKEND_HOST}/organise-tabs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tabs: tabData })
+    });
+
+    if (!response.ok) throw new Error(`HTTP Error Status: ${response.status}`);
+
+    const data = await response.json();
+
+    if (data.groups && data.groups.length > 0) {
+      // 4. Run through grouping loops via Chrome APIs
+      for (const groupPlan of data.groups) {
+        const { title, color, tab_ids } = groupPlan;
+
+        if (tab_ids && tab_ids.length > 0) {
+          try {
+            // Put tabs together
+            const groupId = await chrome.tabs.group({ tabIds: tab_ids });
+
+            // Apply title & styling properties
+            await chrome.tabGroups.update(groupId, {
+              title: title,
+              color: color
+            });
+          } catch (groupError) {
+            console.warn("Failed to complete an individual tab group structure", groupError);
+          }
+        }
+      }
+      appWrap.classList.remove("busy");
+      NotificationService.show(`Successfully organised tabs into ${data.groups.length} groups!`);
+    } else {
+      appWrap.classList.remove("busy");
+      NotificationService.show("FastAPI LLM suggested no groupings.");
+    }
+
+  } catch (err) {
+    appWrap.classList.remove("busy");
+    console.error("Error organizing tabs:", err);
+    NotificationService.show("Could not contact the Sicily Bridge. Is uvicorn active?");
+  }
+}
+
+// Add Event Listeners for options
+btnIncludeGrouped.addEventListener("click", () => startOrganiseTabs(true));
+btnOnlyUngrouped.addEventListener("click", () => startOrganiseTabs(false));
 
 // ── Reusable Glass Notification Service ─────────────────────────────────
 const NotificationService = {

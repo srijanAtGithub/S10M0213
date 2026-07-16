@@ -1110,8 +1110,17 @@
     }
 
     @keyframes dcRingPulse {
-      0%, 100% { transform: scale(1); opacity: 1; }
-      50% { transform: scale(1.1); opacity: 0.5; }
+
+      0%,
+      100% {
+        transform: scale(1);
+        opacity: 1;
+      }
+
+      50% {
+        transform: scale(1.1);
+        opacity: 0.5;
+      }
     }
 
     .dc-orb-core {
@@ -1137,8 +1146,15 @@
     }
 
     @keyframes dcIconFloat {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-3px); }
+
+      0%,
+      100% {
+        transform: translateY(0);
+      }
+
+      50% {
+        transform: translateY(-3px);
+      }
     }
 
     .dc-title {
@@ -1183,6 +1199,112 @@
       pointer-events: none;
       transition: opacity 0.4s ease;
     }
+
+    /* --- Organise Tabs Glass Overlay --- */
+    #organise-tabs-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 110;
+      background: rgba(10, 10, 12, 0.65);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #organise-tabs-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .organise-card {
+      width: 100%;
+      max-width: 280px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(30, 30, 32, 0.85);
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+      transform: scale(0.95);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #organise-tabs-overlay.active .organise-card {
+      transform: scale(1);
+    }
+
+    .organise-header {
+      font-size: 16px;
+      font-weight: 600;
+      color: #f2f2f7;
+      text-align: center;
+    }
+
+    .organise-sub {
+      font-size: 11.5px;
+      color: #a1a1aa;
+      text-align: center;
+      line-height: 1.5;
+      margin-bottom: 6px;
+    }
+
+    .organise-option-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 12px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s ease;
+    }
+
+    .organise-option-btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-1px);
+    }
+
+    .organise-option-btn:active {
+      transform: scale(0.98);
+    }
+
+    .organise-option-btn .btn-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f2f2f7;
+      margin-bottom: 2px;
+    }
+
+    .organise-option-btn .btn-desc {
+      font-size: 10.5px;
+      color: #8e8e93;
+    }
+
+    .organise-cancel-btn {
+      background: transparent;
+      border: none;
+      color: #ff453a;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 8px;
+      text-align: center;
+      transition: opacity 0.2s;
+    }
+
+    .organise-cancel-btn:hover {
+      opacity: 0.8;
+    }
   </style>
 </head>
 
@@ -1198,10 +1320,11 @@
         <div class="dc-orb-ring"></div>
         <div class="dc-orb-core">
           <!-- Broken link icon -->
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-            <line x1="4" y1="4" x2="20" y2="20"/>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            <line x1="4" y1="4" x2="20" y2="20" />
           </svg>
         </div>
       </div>
@@ -1229,6 +1352,26 @@
           </svg>
           <span>Add to Context</span>
         </div>
+      </div>
+    </div>
+
+    <!-- --- Organise Tabs Glass Overlay --- -->
+    <div id="organise-tabs-overlay">
+      <div class="organise-card">
+        <div class="organise-header">Organise Tabs</div>
+        <div class="organise-sub">Group your active browser tabs using Sicily AI. Choose which tabs to include:</div>
+
+        <button class="organise-option-btn" id="btn-include-grouped">
+          <div class="btn-title">Include grouped tabs</div>
+          <div class="btn-desc">Organise all currently open tabs in this window</div>
+        </button>
+
+        <button class="organise-option-btn" id="btn-only-ungrouped">
+          <div class="btn-title">Only ungrouped tabs</div>
+          <div class="btn-desc">Leave existing groups untouched and organise the rest</div>
+        </button>
+
+        <button class="organise-cancel-btn" id="btn-organise-cancel">Cancel</button>
       </div>
     </div>
 
