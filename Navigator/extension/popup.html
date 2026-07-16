@@ -417,12 +417,147 @@
       0% { transform: translateY(-100%); }
       100% { transform: translateY(100%); }
     }
+
+    /* --- Drag and Drop Glass Overlay --- */
+    #drag-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 100;
+      background: rgba(10, 10, 12, 0.6);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      padding: 16px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    #drag-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .drop-zone {
+      flex: 1;
+      border: 2px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+      cursor: copy;
+    }
+
+    .zone-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: #a1a1aa;
+      font-size: 14px;
+      font-weight: 500;
+      pointer-events: none; /* Crucial to prevent flickering drop bugs */
+    }
+
+    .zone-box svg {
+      width: 28px;
+      height: 28px;
+      opacity: 0.7;
+      transition: transform 0.2s;
+    }
+
+    /* Collections Hover State (Muted grey style) */
+    #zone-collections:hover {
+      border-color: rgba(255, 255, 255, 0.4);
+      background: rgba(25, 25, 26, 0.35);
+    }
+
+    /* Context Hover State (Matching your Orchid design) */
+    #zone-context:hover {
+      border-color: #db5ce685;
+      background: linear-gradient(135deg, rgba(193, 49, 206, 0.099) 0%, rgba(25, 25, 26, 0.35) 100%);
+      box-shadow: 0 0 20px rgba(193, 49, 206, 0.15);
+    }
+    #zone-context:hover .zone-box svg {
+      transform: scale(1.1);
+      color: #e67ae2;
+    }
+
+    .sub-label {
+      font-size: 11px;
+      opacity: 0.5;
+    }
+
+    /* --- The Glassy Context Shelf --- */
+    #context-shelf {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 12px;
+      background: rgba(10, 10, 12, 0.4);
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      max-height: 90px;
+      overflow-y: auto;
+    }
+
+    #context-shelf.hidden { display: none; }
+
+    .context-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: #f2f2f7;
+      background: rgba(193, 49, 206, 0.08); 
+      border: 1px solid rgba(219, 92, 230, 0.25);
+      padding: 3px 8px;
+      border-radius: 6px;
+      max-width: 180px;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      animation: timelineInLeft 0.25s ease-out;
+    }
+
+    .context-chip span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .context-close {
+      cursor: pointer;
+      font-weight: bold;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 13px;
+      transition: color 0.1s;
+    }
+    .context-close:hover { color: #ff453a; }
   </style>
 </head>
 
 <body>
   <div class="wrap" id="app-wrap">
     <div class="neural-glow"></div>
+
+    <div id="drag-overlay">
+      <div class="drop-zone" id="zone-collections">
+        <div class="zone-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          <span>Add to Collections</span>
+          <span class="sub-label">(Coming Soon)</span>
+        </div>
+      </div>
+      <div class="drop-zone" id="zone-context">
+        <div class="zone-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Add to Context</span>
+        </div>
+      </div>
+    </div>
+
     <div id="header">
       <span>Sicily Navigator</span>
       <div id="header-right">
@@ -493,6 +628,8 @@
     </div>
 
     <div id="messages"></div>
+
+    <div id="context-shelf" class="hidden"></div>
 
     <div id="input-row">
       <input id="input-box" type="text" placeholder="Type anything..." autocomplete="off" />

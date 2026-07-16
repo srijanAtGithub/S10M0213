@@ -14,39 +14,42 @@ from langgraph.graph import END, StateGraph
 
 import configuration
 
-# ── State ──────────────────────────────────────────────────────────────
+# ── State Declaration Update ───────────────────────────────────────────
 class NavigatorState(TypedDict):
     messages: Annotated[list, operator.add]
-    # Context sent up from the popup on every turn.
     page_url: str
     page_title: str
+    context_snippets: list[str] # Add the snippets parameter to the state array
 
-# ── The Chat Node ──────────────────────────────────────────────────────
+
+# ── The Chat Node Logic ─────────────────────────────────────────────────
 async def chat_node(state: NavigatorState) -> dict:
-    """
-    Connects to the real LLM. Injects the active tab's context as a SystemMessage
-    so the AI knows what page the user is currently looking at.
-    """
-    # Grab the LLM designated for writing/chat tasks
     llm = configuration.get_writing_tool_llm()
 
     url = state.get("page_url") or "Unknown"
     title = state.get("page_title") or "Unknown"
+    snippets = state.get("context_snippets") or []
 
-    # Define the AI's persona and provide the real-time page context
+    # Map selected snippets into a clean, itemized list format
+    snippets_block = ""
+    if snippets:
+        snippets_block = "\n\nCRITICAL REFERENCE CONTEXT:\nThe user has highlighted and attached the following relevant snippets from the webpage to ground your reply:\n"
+        for i, snippet in enumerate(snippets, 1):
+            snippets_block += f'[{i}] "{snippet}"\n'
+
     system_prompt = SystemMessage(
         content=(
-            "You are a helpful assistant"
+            "You are a smart, premium, and highly capable assistant.\n"
+            f"{snippets_block}\n\n"
+            "Provide helpful, concise, and insightful answers. Format your responses cleanly using markdown."
         )
     )
 
-    # Combine the system prompt with the tab's accumulated message history
     conversation = [system_prompt] + state["messages"]
-
-    # Call the LLM
     response = await llm.ainvoke(conversation)
 
     return {"messages": [response]}
+
 
 # ── Build the graph ────────────────────────────────────────────────────
 def build_navigator_graph():

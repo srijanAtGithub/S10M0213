@@ -276,8 +276,10 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
             user_text = (payload.get("text") or "").strip()
             page_url = payload.get("page_url") or ""
             page_title = payload.get("page_title") or ""
+            # 1. Extract the drag-and-dropped snippets array from frontend
+            context_snippets = payload.get("context_snippets") or []
 
-            log.info("Received message", tab_id=tab_id, text=user_text, page_url=page_url)
+            log.info("Received message", tab_id=tab_id, text=user_text, page_url=page_url, snippets_count=len(context_snippets))
 
             if not user_text:
                 await websocket.send_json({"reply": "(empty message ignored)"})
@@ -291,6 +293,7 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
                 "messages": history + [HumanMessage(content=user_text)],
                 "page_url": page_url,
                 "page_title": page_title,
+                "context_snippets": context_snippets, # 2. Forward the snippets into LangGraph state!
             })
 
             # Track token usage from the returned message state

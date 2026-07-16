@@ -10,6 +10,13 @@ const quickActionsWrap = document.getElementById("quick-actions");
 const quickActionsBtn = document.getElementById("quick-actions-btn");
 const quickActionsMenu = document.getElementById("quick-actions-menu");
 const qaItems = document.querySelectorAll(".qa-item");
+// New State Variables and Elements
+const dragOverlay = document.getElementById("drag-overlay");
+const zoneContext = document.getElementById("zone-context");
+const zoneCollections = document.getElementById("zone-collections");
+const contextShelf = document.getElementById("context-shelf");
+
+let attachedContexts = [];
 
 let socket = null;
 let currentTab = { id: null, url: "", title: "" };
@@ -124,11 +131,19 @@ async function sendMessage() {
   currentTab.url = fresh.url;
   currentTab.title = fresh.title;
 
-  socket.send(JSON.stringify({
-    text,
+  // Update the WebSocket JSON object to include the snippets array
+  const payload = {
+    text: text,
     page_url: currentTab.url,
     page_title: currentTab.title,
-  }));
+    context_snippets: attachedContexts // Send context array here
+  };
+
+  socket.send(JSON.stringify(payload));
+
+  // Clear the shelf state locally right after sending
+  attachedContexts = [];
+  renderContextShelf();
 }
 
 async function handleClear() {
@@ -210,6 +225,73 @@ function handleQuickAction(action) {
 qaItems.forEach((item) => {
   item.addEventListener("click", () => handleQuickAction(item.dataset.action));
 });
+
+// ── Drag & Drop Infrastructure ─────────────────────────────────────────
+
+// Detect a dragged item passing into the panel window
+window.addEventListener("dragenter", (e) => {
+  e.preventDefault();
+  dragOverlay.classList.add("active");
+});
+
+// Dragover must be prevented for drop events to execute properly
+dragOverlay.addEventListener("dragover", (e) => {
+  e.preventDefault();
+});
+
+// Hide the drop overlay if the user drags out of the sidepanel
+dragOverlay.addEventListener("dragleave", (e) => {
+  // Only trigger leave if it leaves the entire overlay bounding container
+  if (e.relatedTarget === null || !dragOverlay.contains(e.relatedTarget)) {
+    dragOverlay.classList.remove("active");
+  }
+});
+
+// Drop execution logic
+dragOverlay.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dragOverlay.classList.remove("active");
+
+  const droppedText = e.dataTransfer.getData("text/plain");
+  if (!droppedText || droppedText.trim() === "") return;
+
+  // Check if we dropped over the Context Zone specifically
+  if (e.target.closest("#zone-context")) {
+    attachedContexts.push(droppedText.trim());
+    renderContextShelf();
+  }
+});
+
+// Re-renders the graphical shelf of context chips
+function renderContextShelf() {
+  contextShelf.innerHTML = "";
+  if (attachedContexts.length === 0) {
+    contextShelf.classList.add("hidden");
+    return;
+  }
+  
+  contextShelf.classList.remove("hidden");
+  
+  attachedContexts.forEach((text, index) => {
+    const chip = document.createElement("div");
+    chip.className = "context-chip";
+    
+    const label = document.createElement("span");
+    label.textContent = text;
+    
+    const closeBtn = document.createElement("div");
+    closeBtn.className = "context-close";
+    closeBtn.innerHTML = "&times;";
+    closeBtn.addEventListener("click", () => {
+      attachedContexts.splice(index, 1);
+      renderContextShelf();
+    });
+    
+    chip.appendChild(label);
+    chip.appendChild(closeBtn);
+    contextShelf.appendChild(chip);
+  });
+}
 
 // ── Init ──────────────────────────────────────────────────────────────
 (async () => {
