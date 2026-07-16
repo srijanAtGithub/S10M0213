@@ -673,14 +673,57 @@
           box-shadow: 0 0 14px rgba(255, 105, 180, 0.25); 
         }
 
+        /* --- Action Button Container (Grid Stacking) --- */
         .action-btns {
-          display: flex;
-          gap: 6px;
-          align-self: flex-end; /* Anchors the buttons to the bottom right under the text */
+          display: grid; /* Grid allows children to stack perfectly on top of each other */
+          align-self: flex-end; 
           transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        /* --- Hide buttons smoothly when busy --- */
+        .btn-group {
+          grid-area: 1 / 1; /* Forces both groups into the exact same cell */
+          display: flex;
+          gap: 6px;
+          justify-content: flex-end;
+          transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
+                      transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                      filter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* --- Default State: Summarize & Rewrite --- */
+        .group-default {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          pointer-events: auto;
+          filter: blur(0px);
+        }
+        
+        /* The incoming state waits slightly below and blurred */
+        .group-typing {
+          opacity: 0;
+          transform: translateY(8px) scale(0.95);
+          pointer-events: none;
+          filter: blur(3px);
+        }
+
+        /* --- Typing State: Ask & Edit (Triggered by .has-text) --- */
+        /* Default buttons float up and blur out */
+        .action-btns.has-text .group-default {
+          opacity: 0;
+          transform: translateY(-8px) scale(0.95);
+          pointer-events: none;
+          filter: blur(3px);
+        }
+        
+        /* Typing buttons snap into focus */
+        .action-btns.has-text .group-typing {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          pointer-events: auto;
+          filter: blur(0px);
+        }
+
+        /* --- Hide smoothly when backend is busy --- */
         .wrap.busy .action-btns {
           opacity: 0;
           transform: translateY(12px);
@@ -705,22 +748,19 @@
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
 
-        /* The Ask Button - Ultra Translucent Gray */
-        .btn-ask {
+        /* All Action Buttons - Ultra Translucent Gray */
+        .btn-ask, .btn-edit, .btn-replace, .btn-summarise, .btn-rewrite {
           background: rgba(255, 255, 255, 0.06);
           color: #f2f2f7;
-        }
-        .btn-ask:hover:not(:disabled) { 
-          background: rgba(255, 255, 255, 0.12);
         }
 
-        /* The Edit & Replace Buttons - Subtle Translucent Purple */
-        .btn-edit, .btn-replace {
-          background: rgba(255, 255, 255, 0.06);
-          color: #f2f2f7;
-        }
-        .btn-edit:hover:not(:disabled), .btn-replace:hover { 
-          background: rgba(94, 92, 230, 0.28);
+        /* Shared Hover Effect */
+        .btn-ask:hover:not(:disabled),
+        .btn-edit:hover:not(:disabled),
+        .btn-replace:hover,
+        .btn-summarise:hover:not(:disabled),
+        .btn-rewrite:hover:not(:disabled) { 
+          background: rgba(255, 255, 255, 0.12);
         }
 
         .status {
@@ -780,8 +820,16 @@
           <div class="view input-view active">
             <textarea placeholder="Ask or describe edit..." rows="1"></textarea>
             <div class="action-btns">
-              <button class="submit-btn btn-ask">Ask</button>
-              <button class="submit-btn btn-edit">Edit</button>
+              <!-- Default state buttons -->
+              <div class="btn-group group-default">
+                <button class="submit-btn btn-summarise">Summarize</button>
+                <button class="submit-btn btn-rewrite">Rewrite</button>
+              </div>
+              <!-- Typing state buttons -->
+              <div class="btn-group group-typing">
+                <button class="submit-btn btn-ask">Ask</button>
+                <button class="submit-btn btn-edit">Edit</button>
+              </div>
             </div>
           </div>
           
@@ -806,8 +854,11 @@
     const inputView = shadow.querySelector(".input-view");
     const resultView = shadow.querySelector(".result-view");
     const input = shadow.querySelector("textarea");
+    const actionBtns = shadow.querySelector(".action-btns");
     const askBtn = shadow.querySelector(".btn-ask");
     const editBtn = shadow.querySelector(".btn-edit");
+    const summariseBtn = shadow.querySelector(".btn-summarise");
+    const rewriteBtn = shadow.querySelector(".btn-rewrite");
     const status = shadow.querySelector(".status");
     const noticeEl = shadow.querySelector(".notice");
     const resultText = shadow.querySelector(".result-text");
@@ -934,8 +985,19 @@
     }
 
     function submit(actionType) {
-      const instruction = input.value.trim();
-      if (!instruction) return;
+      let instruction = input.value.trim();
+
+      // Allow 'summarise' and 'rewrite' to proceed even if the text box is empty
+      if (!instruction) {
+        if (actionType === "summarise") {
+          instruction = "Summarise this text.";
+        } else if (actionType === "rewrite") {
+          instruction = "Rewrite this professionally.";
+        } else {
+          // If it's 'ask' or 'edit', we still strictly require user input
+          return;
+        }
+      }
 
       setBusy(true);
       status.style.display = "none";
@@ -967,11 +1029,20 @@
 
     askBtn.addEventListener("click", () => submit("ask"));
     editBtn.addEventListener("click", () => submit("edit"));
+    summariseBtn.addEventListener("click", () => submit("summarise"));
+    rewriteBtn.addEventListener("click", () => submit("rewrite"));
 
-    // Smooth auto-grow mechanic for the textarea
+    // Smooth auto-grow mechanic and state toggle for the buttons
     input.addEventListener("input", () => {
+      // Auto-grow
       input.style.height = "auto";
       input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+
+      if (input.value.trim().length > 0) {
+        actionBtns.classList.add("has-text");
+      } else {
+        actionBtns.classList.remove("has-text");
+      }
     });
 
     input.addEventListener("keydown", (e) => {

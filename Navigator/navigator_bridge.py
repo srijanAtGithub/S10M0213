@@ -193,16 +193,34 @@ async def call_edit_model(selected_text: str, instruction: str, action_type: str
                 "Provide a clean, self-contained final response with absolutely no open-ended transitions."
             )
         )
+    elif action_type == "rewrite":
+        system_msg = SystemMessage(
+            content=(
+                "You are an automated, programmatic text-replacement engine. "
+                "Rewrite the user's selected text in a highly professional manner, completely free of jargon. "
+                "The tone should be polished and appropriate for professional emails or personal documents. "
+                "CRITICAL CONSTRAINT: Output EXCLUSIVELY the final revised text. "
+                "Do NOT include any introductions, explanations, pleasantries, meta-commentary, "
+                "or follow-up questions. Your entire output will be injected directly into the user's document."
+            )
+        )
+    elif action_type == "summarise":
+        system_msg = SystemMessage(
+            content=(
+                "You are an automated, programmatic text-replacement engine. "
+                "Provide a concise, highly accurate summary of the user's selected text. "
+                "CRITICAL CONSTRAINT: Output EXCLUSIVELY the final summarized text. "
+                "Do NOT include any introductions like 'Here is the summary', pleasantries, or meta-commentary. "
+                "Your entire output will be injected directly into the user's document."
+            )
+        )
     else:
         system_msg = SystemMessage(
             content=(
                 "You are an automated, programmatic text-replacement engine. "
                 "Rewrite the user's selected text exactly according to their instruction. "
                 "CRITICAL CONSTRAINT: Output EXCLUSIVELY the final revised text. "
-                "Do NOT include any introductions, explanations, pleasantries, meta-commentary, "
-                "or follow-up questions (e.g., never say 'Here is the rewrite' or ask 'Want me to shorten it?'). "
-                "Your entire output will be injected directly into the user's document, so any extra words, "
-                "conversational notes, or markdown formatting wrappers will completely corrupt their file."
+                "Do NOT include any introductions, explanations, pleasantries, meta-commentary, or follow-up questions."
             )
         )
     
