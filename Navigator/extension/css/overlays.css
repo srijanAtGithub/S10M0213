@@ -415,3 +415,92 @@
 .organise-cancel-btn:hover {
     opacity: 0.8;
 }
+
+/* --- Summarise Page Glass Overlay --- */
+#summary-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 110;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#summary-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#summary-overlay .organise-card {
+    max-width: 100%;
+    width: 550px;
+}
+
+.summary-text {
+    font-size: 13px;
+    color: #f2f2f7;
+    line-height: 1.6;
+    max-height: 500px;
+    overflow-y: auto;
+    margin: 10px 0;
+    white-space: pre-wrap;
+    /* Forces newlines to render without markdown */
+    padding: 0 5px;
+}
+
+/* --- Floating Summary Buttons --- */
+.summary-actions {
+    display: flex;
+    gap: 12px;
+    /* Gap between the text card and the buttons */
+    transform: scale(0.95);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#summary-overlay.active .summary-actions {
+    transform: scale(1);
+}
+
+.summary-floating-btn {
+    /* Premium Glassmorphism matching the organise-card */
+    background: rgba(30, 30, 32, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(30px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+
+    border-radius: 12px;
+    padding: 10px 18px;
+    color: #f2f2f7;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.summary-floating-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+}
+
+.summary-floating-btn:active {
+    transform: scale(0.96);
+}
+
+/* Subtle emphasis for the primary action */
+.summary-floating-btn.highlight {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    font-weight: 600;
+}
+
+.summary-floating-btn.highlight:hover {
+    background: rgba(255, 255, 255, 0.18);
+}

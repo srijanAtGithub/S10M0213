@@ -30,6 +30,7 @@ from Navigator.Task_Files.Chat_Section import build_navigator_graph
 
 from Navigator.Task_Files.Organise_Tools import OrganiseTabsRequest, process_organise_tabs
 from Navigator.Task_Files.Edit_Selection import EditSelectionRequest, EditSelectionResponse, process_edit_selection
+from Navigator.Task_Files.Summarise_Page import SummarisePageRequest, SummarisePageResponse, process_summarise_page
 
 log = structlog.get_logger()
 
@@ -54,6 +55,10 @@ async def organise_tabs(req: OrganiseTabsRequest):
 @app.post("/edit-selection", response_model=EditSelectionResponse)
 async def edit_selection(req: EditSelectionRequest):
     return await process_edit_selection(req)
+
+@app.post("/summarise-page", response_model=SummarisePageResponse)
+async def summarise_page(req: SummarisePageRequest):
+    return await process_summarise_page(req)
 
 # One compiled graph instance, reused for every turn on every tab.
 # It has no memory of its own — memory lives in SessionStore below and

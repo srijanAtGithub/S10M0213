@@ -16,6 +16,35 @@ const organiseTabsOverlay = document.getElementById("organise-tabs-overlay");
 const btnIncludeGrouped = document.getElementById("btn-include-grouped");
 const btnOnlyUngrouped = document.getElementById("btn-only-ungrouped");
 
+const summaryOverlay = document.getElementById("summary-overlay");
+const summaryContent = document.getElementById("summary-content");
+const btnOkSummary = document.getElementById("btn-ok-summary");
+const btnAddChatSummary = document.getElementById("btn-add-chat-summary");
+
+// Wire up the OK button to just close the overlay
+btnOkSummary?.addEventListener("click", () => {
+  summaryOverlay.classList.remove("active");
+});
+
+// Wire up the "Add to Chat" button
+btnAddChatSummary?.addEventListener("click", () => {
+  const summaryText = summaryContent.textContent;
+
+  if (summaryText && summaryText.trim() !== "") {
+    // 1. Push it into the existing context array
+    attachedContexts.push(summaryText.trim());
+
+    // 2. Re-render the visual UI shelf at the bottom dock
+    renderContextShelf();
+
+    // 3. Notify the user it was successful
+    NotificationService.show("Summary added to context.");
+  }
+
+  // Close the window
+  summaryOverlay.classList.remove("active");
+});
+
 export let attachedContexts = [];
 let expandedContextIndices = new Set();
 let qaCloseTimer = null;
@@ -59,6 +88,10 @@ function handleQuickAction(action) {
   closeQuickActions();
   if (action === "organise-tabs") {
     showOrganiseTabsOverlay();
+    return;
+  }
+  if (action === "summarise-page") {
+    startSummarisePage();
     return;
   }
   const labels = {
@@ -291,4 +324,64 @@ btnOnlyUngrouped.addEventListener("click", () => startOrganiseTabs(false));
 export function clearAttachedContexts() {
   attachedContexts.length = 0;
   renderContextShelf();
+}
+
+async function startSummarisePage() {
+  // 1. Show notification and trigger neural glow
+  NotificationService.show("Summarising page...");
+  appWrap.classList.add("busy");
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error("No active tab found.");
+
+    // 2. Pre-LLM Extraction Layer (Domestic Chores)
+    const injectionResult = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        // Strip out useless structural tags before grabbing text
+        const clone = document.cloneNode(true);
+        const tagsToRemove = ['nav', 'footer', 'aside', 'script', 'style', 'noscript', 'header'];
+        tagsToRemove.forEach(tag => {
+          const elements = clone.querySelectorAll(tag);
+          elements.forEach(el => el.parentNode?.removeChild(el));
+        });
+
+        // Truncate to ~5000 characters to cap tokens (Smart Cap)
+        return clone.body ? clone.body.innerText.substring(0, 5000) : "";
+      }
+    });
+
+    const cleanText = injectionResult[0]?.result || "";
+
+    if (!cleanText) {
+      throw new Error("Could not extract text from this page.");
+    }
+
+    // 3. API Call to the dedicated nano-model route
+    const response = await fetch(`http://${BACKEND_HOST}/summarise-page`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: tab.url,
+        title: tab.title,
+        content: cleanText
+      })
+    });
+
+    if (!response.ok) throw new Error(`HTTP Error Status: ${response.status}`);
+
+    const data = await response.json();
+
+    // 4. Show the plain text result in the glassmorphism overlay
+    summaryContent.textContent = data.summary;
+    summaryOverlay.classList.add("active");
+
+  } catch (err) {
+    console.error("Summarise error:", err);
+    NotificationService.show("Failed to summarise page. Is the backend running?");
+  } finally {
+    // Stop the neural glow
+    appWrap.classList.remove("busy");
+  }
 }
