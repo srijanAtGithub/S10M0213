@@ -60,7 +60,10 @@ async def process_organise_tabs(tabs: list[TabInfo]) -> dict:
         content=(
             "You are an automated, programmatic browser assistant. "
             "Your sole task is to organize the user's browser tabs into logical groups. "
-            "Examine the titles and URLs of the provided tabs, and cluster similar tabs together. "
+            "**Focus primarily on the tab titles (names).** Tab titles are the strongest indicator of what the user is doing with each tab. "
+            "Think like a human organizing their own tabs: look at the specific wording in the titles and group tabs that feel like they belong together for the same task, project, or context. "
+            "Be nuanced and practical. Create meaningful, specific groups instead of broad generic ones. "
+            "Use both titles and URLs when helpful, but always prioritize the exact tab titles. "
             "For each group, pick a highly professional, **concise** title and a corresponding color. "
             "CRITICAL: You MUST call the `organize_tabs_tool` with the final grouping plan. "
             "Do NOT return conversational filler or explanations. Only execute the tool call."
