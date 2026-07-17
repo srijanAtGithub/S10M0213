@@ -296,6 +296,260 @@
     }
 }
 
+/* --- "Using: tab" indicator bar (born out of the input box) --- */
+.using-tab-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 12px;
+    padding: 0 10px;
+    height: 0;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.055);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 0 1px rgba(255, 255, 255, 0.12);
+
+    overflow: hidden;
+    opacity: 0;
+    transform: scaleY(0.2) translateY(6px);
+    transform-origin: bottom center;
+    pointer-events: none;
+
+    transition:
+        height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+        opacity 0.32s ease,
+        transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+        margin-top 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.2s ease;
+}
+
+.using-tab-bar--visible {
+    height: 34px;
+    margin-top: 8px;
+    opacity: 1;
+    transform: scaleY(1) translateY(0);
+    pointer-events: auto;
+}
+
+/* "Born out of the text box" entrance: an emphasized spring pop the
+     first time (or on every replace) that reads as the bar being
+     generated from the input row right beneath it, rather than a
+     generic fade. Re-triggered on every new/replaced mention. */
+@keyframes usingTabBorn {
+    0% {
+        height: 0;
+        opacity: 0;
+        transform: scaleY(0.15) translateY(10px);
+        border-color: rgba(255, 255, 255, 0.06);
+    }
+
+    45% {
+        height: 38px;
+        opacity: 1;
+        transform: scaleY(1.08) translateY(-1px);
+        border-color: rgba(255, 255, 255, 0.32);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 0 20px rgba(255, 255, 255, 0.12);
+    }
+
+    75% {
+        height: 32px;
+        transform: scaleY(0.97) translateY(0.5px);
+    }
+
+    100% {
+        height: 34px;
+        opacity: 1;
+        transform: scaleY(1) translateY(0);
+        border-color: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 0 1px rgba(255, 255, 255, 0.12);
+    }
+}
+
+.using-tab-bar--born {
+    animation: usingTabBorn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.using-tab-bar--leaving {
+    height: 0 !important;
+    margin-top: 0 !important;
+    opacity: 0 !important;
+    transform: scaleY(0.2) translateY(6px) !important;
+    pointer-events: none;
+}
+
+.using-tab-icon {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #c7c7cc;
+    opacity: 0.9;
+}
+
+.using-tab-icon svg,
+.using-tab-icon img {
+    width: 100%;
+    height: 100%;
+    border-radius: 3px;
+    object-fit: contain;
+}
+
+.using-tab-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 11.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.using-tab-prefix {
+    color: #8e8e93;
+    font-weight: 500;
+}
+
+.using-tab-name {
+    color: #f2f2f7;
+    font-weight: 600;
+}
+
+.using-tab-close {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 13px;
+    line-height: 1;
+    transition: color 0.15s, background-color 0.15s, transform 0.15s;
+}
+
+.using-tab-close:hover {
+    color: #ff453a;
+    background: rgba(255, 69, 58, 0.12);
+    transform: scale(1.15);
+}
+
+.using-tab-close:active {
+    transform: scale(0.9);
+}
+
+/* --- @-mention tab dropdown --- */
+.mention-dropdown {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 100%;
+    margin-bottom: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(20, 20, 22, 0.82);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow:
+        0 10px 30px rgba(0, 0, 0, 0.45),
+        inset 0 0 1px rgba(255, 255, 255, 0.14);
+
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+    transform-origin: bottom center;
+    pointer-events: none;
+    z-index: 5;
+
+    transition:
+        opacity 0.22s ease,
+        transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mention-dropdown--visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.mention-dropdown::-webkit-scrollbar {
+    width: 6px;
+}
+
+.mention-dropdown::-webkit-scrollbar-thumb {
+    background: rgba(120, 120, 128, 0.4);
+    border-radius: 4px;
+}
+
+.mention-dropdown-empty {
+    padding: 12px;
+    font-size: 12px;
+    color: #8e8e93;
+    text-align: center;
+}
+
+.mention-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background-color 0.12s ease;
+}
+
+.mention-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.mention-dropdown-item:hover,
+.mention-dropdown-item.highlighted {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mention-dropdown-icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #c7c7cc;
+    opacity: 0.9;
+}
+
+.mention-dropdown-icon svg,
+.mention-dropdown-icon img {
+    width: 100%;
+    height: 100%;
+    border-radius: 3px;
+    object-fit: contain;
+}
+
+.mention-dropdown-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.mention-dropdown-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: #f2f2f7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* --- The Glassy Context Shelf (Gemini-style attachment tray) --- */
 #context-shelf {
     display: flex;

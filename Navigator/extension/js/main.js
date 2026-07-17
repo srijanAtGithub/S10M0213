@@ -2,6 +2,7 @@ import { NotificationService } from "./notifications.js";
 import { addMessage, clearMessagesUI, addContextTrail, setSending, sendBtn, appWrap } from "./ui.js";
 import { socket, getActiveTabInfo, loadHistory, clearHistoryOnBackend, connectSocket } from "./api.js";
 import { attachedContexts, clearAttachedContexts } from "./features.js";
+import { getMentionedTabSnippet, hasMentionedTab, clearMentionedTab, isMentionDropdownOpen } from "./mentions.js";
 
 const inputEl = document.getElementById("input-box");
 const clearBtn = document.getElementById("clear-btn");
@@ -16,7 +17,16 @@ async function sendMessage() {
     return;
   }
 
-  addContextTrail(attachedContexts);
+  // The mentioned tab's full page content rides alongside any manually
+  // attached snippets (drag/drop, summaries) as one more context_snippets
+  // entry — the backend already folds every snippet into the turn
+  // generically, so no bridge/graph changes are needed for this.
+  const mentionSnippet = getMentionedTabSnippet();
+  const outgoingSnippets = mentionSnippet
+    ? [...attachedContexts, mentionSnippet]
+    : attachedContexts;
+
+  addContextTrail(outgoingSnippets);
   addMessage(text, "user");
   inputEl.value = "";
   setSending(true);
@@ -29,11 +39,12 @@ async function sendMessage() {
     text: text,
     page_url: currentTab.url,
     page_title: currentTab.title,
-    context_snippets: attachedContexts
+    context_snippets: outgoingSnippets
   };
 
   socket.send(JSON.stringify(payload));
   clearAttachedContexts();
+  if (hasMentionedTab()) clearMentionedTab();
 }
 
 async function handleClear() {
@@ -48,7 +59,9 @@ async function handleClear() {
 sendBtn.addEventListener("click", sendMessage);
 clearBtn.addEventListener("click", handleClear);
 inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendMessage();
+  // Don't send the message if Enter was meant to pick a highlighted
+  // tab in the @-mention dropdown instead.
+  if (e.key === "Enter" && !isMentionDropdownOpen()) sendMessage();
 });
 
 (async () => {
