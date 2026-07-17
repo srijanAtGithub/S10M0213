@@ -4,20 +4,23 @@ navigator_bridge.py
 FastAPI server serving as the browser extension bridge.
 
 Features:
-  - Chat (WebSocket): Tab-scoped conversation state managed in-memory via LangGraph[cite: 3]. 
-    Sessions are created lazily and cleared on tab closure or explicit user request[cite: 3].
+  - Chat (WebSocket): Tab-scoped conversation state persisted to a local
+    SQLite database (ChatStore, ~/.sicily/Navigator/ChatsData/chats.db),
+    via LangGraph[cite: 3]. Sessions are created lazily and survive
+    backend restarts; they're cleared on tab closure or explicit user
+    request[cite: 3].
   - Tools (REST): Stateless endpoints for /edit-selection and /organise-tabs[cite: 3].
 
 Design:
-  - This is a modular demo. The SessionStore and internal logic are structured 
-    for easy migration to persistent storage and integration with LLM 
-    configuration/ToolManagers in the future[cite: 3].
+  - This is a modular demo. The ChatStore and internal logic are structured 
+    for easy migration to a different persistence backend and integration 
+    with LLM configuration/ToolManagers in the future[cite: 3].
 
 Run:
   uv run uvicorn Navigator.navigator_bridge:app --reload --port 8765[cite: 3]
 """
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 import configuration
 configuration.load_config()
@@ -27,6 +30,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from Navigator.Task_Files.Chat_Section import build_navigator_graph
+from Navigator.Task_Files.ChatStore import ChatStore
 
 from Navigator.Task_Files.Organise_Tools import OrganiseTabsRequest, process_organise_tabs
 from Navigator.Task_Files.Edit_Selection import EditSelectionRequest, EditSelectionResponse, process_edit_selection
@@ -61,56 +65,17 @@ async def summarise_page(req: SummarisePageRequest):
     return await process_summarise_page(req)
 
 # One compiled graph instance, reused for every turn on every tab.
-# It has no memory of its own — memory lives in SessionStore below and
+# It has no memory of its own — memory lives in the ChatStore below and
 # is handed to the graph fresh on each invocation as part of the state.
 graph = build_navigator_graph()
 
 
-class SessionStore:
-    """
-    In-memory, tab-scoped conversation history.
-
-    tab_id -> list[BaseMessage]
-
-    One entry per tab that has sent at least one message. Deliberately
-    dumb (no TTL, no persistence to disk) — this is exactly the amount
-    of state the demo needs, and it's isolated here so it can be swapped
-    for something real (Redis, a LangGraph checkpointer, whatever) later
-    without touching the graph or the WebSocket handler logic.
-    """
-
-    def __init__(self):
-        self._sessions: dict[str, list[BaseMessage]] = {}
-
-    def get(self, tab_id: str) -> list[BaseMessage]:
-        return self._sessions.get(tab_id, [])
-
-    def set(self, tab_id: str, messages: list[BaseMessage]) -> None:
-        self._sessions[tab_id] = messages
-
-    def clear(self, tab_id: str) -> bool:
-        """Returns True if a session existed and was removed."""
-        return self._sessions.pop(tab_id, None) is not None
-
-    def __len__(self) -> int:
-        return len(self._sessions)
-
-
-sessions = SessionStore()
-
-
-def serialize_messages(messages: list[BaseMessage]) -> list[dict]:
-    """Turn LangChain messages into the plain {role, text} shape the popup renders."""
-    out = []
-    for m in messages:
-        if isinstance(m, HumanMessage):
-            role = "user"
-        elif isinstance(m, AIMessage):
-            role = "ai"
-        else:
-            continue  # nothing else shows up in this demo's history
-        out.append({"role": role, "text": m.content})
-    return out
+# Persistent, tab-scoped conversation history. Replaces the old
+# in-memory SessionStore — same get/set/clear/__len__ shape, but backed
+# by SQLite under ~/.sicily/Navigator/ChatsData/chats.db, so history
+# survives a backend restart and reopening the same tab. See
+# ChatStore.py for the schema and the reasoning behind it.
+sessions = ChatStore()
 
 
 @app.get("/health")
@@ -129,8 +94,16 @@ async def get_session(tab_id: str):
     """
     Called by the popup on open, so switching back to a tab restores
     that tab's chat instead of showing a blank window.
+
+    Returns each row as {"role": "user"|"ai", "text": str,
+    "context_snippets": list[str]} — the same shape main.js already
+    expects from its startup history-replay loop (it calls
+    addContextTrail(m.context_snippets) then addMessage(m.text, role)
+    for each entry), so drag-dropped context, "Add to Chat" summaries,
+    and @-mentioned tab content all reappear exactly as they looked
+    when the turn was sent, not just the message text.
     """
-    return {"messages": serialize_messages(sessions.get(tab_id))}
+    return {"messages": sessions.get_full(tab_id)}
 
 
 @app.delete("/session/{tab_id}")
@@ -199,16 +172,28 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
             except Exception as token_err:
                 log.warning("Failed to collect navigator token metrics", error=str(token_err))
 
-            # Persist the updated history (old messages + new human + new ai)
-            # for this tab, so it's there next time this tab's popup opens.
-            sessions.set(tab_id, result["messages"])
-
             # Pull the newest AI message out as plain text.
             reply_text = "(no response)"
             for msg in reversed(result["messages"]):
                 if isinstance(msg, AIMessage) and msg.content:
                     reply_text = msg.content
                     break
+
+            # Persist just this turn (the new human message + the new AI
+            # reply), along with whatever context_snippets rode alongside
+            # the human message — not the whole rebuilt `result["messages"]`
+            # array, since `history` already contains everything before
+            # this turn and is itself sourced from ChatStore on the next
+            # call. This is what makes the "Ctrl+Shift+T reopen the same
+            # tab" and "backend restarted" cases both come back exactly as
+            # they were: the row-level context_snippets travel with the
+            # user's message, not just its text.
+            sessions.append_turn(
+                tab_id=tab_id,
+                user_text=user_text,
+                ai_text=reply_text,
+                context_snippets=context_snippets,
+            )
 
             await websocket.send_json({"reply": reply_text})
 
