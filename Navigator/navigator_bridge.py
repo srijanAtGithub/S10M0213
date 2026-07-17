@@ -32,7 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from Navigator.Task_Files.Chat_Section import build_navigator_graph
 from Navigator.Task_Files.ChatStore import ChatStore
 
-from Navigator.Task_Files.Organise_Tools import OrganiseTabsRequest, process_organise_tabs
+from Navigator.Task_Files.Organise_Tabs import OrganiseTabsRequest, process_organise_tabs
 from Navigator.Task_Files.Edit_Selection import EditSelectionRequest, EditSelectionResponse, process_edit_selection
 from Navigator.Task_Files.Summarise_Page import SummarisePageRequest, SummarisePageResponse, process_summarise_page
 from Navigator.Task_Files.Collections import (
