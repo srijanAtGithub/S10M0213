@@ -21,7 +21,7 @@ body {
     /* Glassmorphism Effect */
     backdrop-filter: blur(30px);
     -webkit-backdrop-filter: blur(30px);
-    background: rgba(15, 15, 15, 0.95);
+    background: rgba(10, 10, 10, 0.95);
     /* Dark base for side panel */
 
     /* The "Shader" / Glowing Border Effect */

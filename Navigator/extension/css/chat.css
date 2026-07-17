@@ -129,12 +129,12 @@
     align-self: flex-start;
     text-align: left;
     /* Soft gradient that fades into transparency, creating a glow without a box */
-    background: linear-gradient(90deg, rgb(33, 33, 33) 0%, transparent 100%);
+    /* background: linear-gradient(90deg, rgba(10, 10, 10, 0.9) 0%, transparent 100%); */
     color: #f2f2f7;
     /* High contrast text */
     padding: 6px 10px 6px 10px;
     /* Padding on the left */
-    border-left: 2px solid #3a3a3a85;
+    border-left: 2px solid #ffffff41;
     /* Sicily Navigator purple accent */
     box-shadow: none;
     border-radius: 0;
@@ -211,7 +211,7 @@
     flex: 1;
     padding: 9px 12px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     background: rgba(0, 0, 0, 0.9);
     /* Solid-ish so it reads as its own floating pill against the
          busy messages list scrolling underneath it */

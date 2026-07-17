@@ -27,7 +27,6 @@ const collectionsPickerInput = document.getElementById("collections-picker-input
 const collectionsPickerList = document.getElementById("collections-picker-list");
 const collectionsCreateBtn = document.getElementById("collections-create-btn");
 const collectionsCreateBtnLabel = document.getElementById("collections-create-btn-label");
-const collectionsPickerCancel = document.getElementById("collections-picker-cancel");
 
 // Wire up the OK button to just close the overlay
 btnOkSummary?.addEventListener("click", () => {
@@ -464,9 +463,8 @@ function closeCollectionsPicker() {
   pendingSnippet = null;
 }
 
-collectionsPickerCancel?.addEventListener("click", closeCollectionsPicker);
 collectionsPickerOverlay?.addEventListener("click", (e) => {
-  if (!e.target.closest(".organise-card") && !e.target.closest(".collections-picker-cancel")) {
+  if (!e.target.closest(".organise-card")) {
     closeCollectionsPicker();
   }
 });

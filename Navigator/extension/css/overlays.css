@@ -449,9 +449,33 @@
     max-height: 500px;
     overflow-y: auto;
     margin: 10px 0;
+    padding: 12px 8px;
     white-space: pre-wrap;
-    /* Forces newlines to render without markdown */
-    padding: 0 5px;
+    box-sizing: border-box;
+
+    /* Soft fade - much gentler now */
+    -webkit-mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 5%,
+            black 95%,
+            transparent 100%);
+    mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 5%,
+            black 95%,
+            transparent 100%);
+}
+
+/* For WebKit browsers (Chrome, Edge, etc.) */
+.summary-text::-webkit-scrollbar {
+    width: 6px;
+}
+
+.summary-text::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 20px;
 }
 
 /* --- Floating Summary Buttons --- */
@@ -574,6 +598,7 @@
     background: rgba(255, 255, 255, 0.1);
 }
 
+/* --- Collections Picker List - Soft Fade --- */
 .collections-picker-list {
     display: flex;
     flex-direction: column;
@@ -581,6 +606,22 @@
     max-height: 220px;
     overflow-y: auto;
     margin: -2px 0;
+    padding: 8px 0;
+    box-sizing: border-box;
+
+    /* Soft fade at top & bottom */
+    -webkit-mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 6%,
+            black 94%,
+            transparent 100%);
+    mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 6%,
+            black 94%,
+            transparent 100%);
 }
 
 .collections-picker-empty {
@@ -707,16 +748,30 @@
     width: 550px;
 }
 
+/* --- Saved Collections / Snippets View List - Soft Fade --- */
 .collections-view-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
     overflow-y: auto;
     max-height: 500px;
-    /* Matches summary-text max-height */
     margin: 4px -6px;
-    /* Offset for scrollbar breathing room */
-    padding: 0 6px;
+    padding: 8px 6px;
+    box-sizing: border-box;
+
+    /* Soft fade at top & bottom */
+    -webkit-mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 6%,
+            black 94%,
+            transparent 100%);
+    mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 6%,
+            black 94%,
+            transparent 100%);
 }
 
 /* Reusing the premium interactive feel of the picker items */
