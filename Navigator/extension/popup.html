@@ -44,7 +44,6 @@
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
           <span>Add to Collections</span>
-          <span class="sub-label">(Coming Soon)</span>
         </div>
       </div>
       <div class="drop-zone" id="zone-context">
@@ -83,6 +82,48 @@
       <div class="summary-actions">
         <button class="summary-floating-btn" id="btn-ok-summary">OK</button>
         <button class="summary-floating-btn highlight" id="btn-add-chat-summary">Add to Chat</button>
+      </div>
+    </div>
+
+    <!-- --- Add to Collections Picker Overlay --- -->
+    <div id="collections-picker-overlay">
+      <div class="organise-card collections-picker-card">
+        <div class="organise-header">Add to Collection</div>
+        <div class="collections-picker-preview" id="collections-picker-preview"></div>
+
+        <input type="text" id="collections-picker-input" class="collections-picker-input"
+          placeholder="Find or create a collection..." autocomplete="off" />
+
+        <div class="collections-picker-list" id="collections-picker-list">
+          <!-- populated at runtime with .collection-picker-item rows -->
+        </div>
+
+        <button class="collections-create-btn hidden" id="collections-create-btn">
+          <span class="qa-icon">
+            <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span id="collections-create-btn-label">Create &amp; Add</span>
+        </button>
+      </div>
+
+      <button class="organise-cancel-btn collections-picker-cancel" id="collections-picker-cancel">Cancel</button>
+    </div>
+
+    <!-- --- Saved Collections View Overlay --- -->
+    <div id="collections-view-overlay">
+      <div class="organise-card collections-view-card">
+        <div class="organise-header" id="collections-view-title">Saved Collections</div>
+
+        <div class="collections-view-list" id="collections-view-list">
+          <!-- Populated at runtime -->
+        </div>
+
+        <!-- Action Bar (Hidden in Scene A, Visible in Scene B) -->
+        <div class="summary-actions" id="collections-view-actions" style="margin-top: 10px; display: none;">
+          <button class="summary-floating-btn" id="collections-view-back-btn">← Back to Collections</button>
+        </div>
       </div>
     </div>
 

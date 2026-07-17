@@ -35,6 +35,15 @@ from Navigator.Task_Files.ChatStore import ChatStore
 from Navigator.Task_Files.Organise_Tools import OrganiseTabsRequest, process_organise_tabs
 from Navigator.Task_Files.Edit_Selection import EditSelectionRequest, EditSelectionResponse, process_edit_selection
 from Navigator.Task_Files.Summarise_Page import SummarisePageRequest, SummarisePageResponse, process_summarise_page
+from Navigator.Task_Files.Collections import (
+    ListCollectionsResponse,
+    AddSnippetRequest,
+    AddSnippetResponse,
+    CollectionDetailResponse,
+    process_list_collections,
+    process_add_snippet,
+    process_get_collection,
+)
 
 log = structlog.get_logger()
 
@@ -63,6 +72,32 @@ async def edit_selection(req: EditSelectionRequest):
 @app.post("/summarise-page", response_model=SummarisePageResponse)
 async def summarise_page(req: SummarisePageRequest):
     return await process_summarise_page(req)
+
+# ── Saved Collections ────────────────────────────────────────────────
+# Drag-and-drop-to-collections feature: dropping a text snippet on the
+# side panel's Collections zone opens a floating picker (existing
+# collections, filterable, plus "create and add") which hits these
+# routes. See Collections.py for the SQLite-backed storage.
+
+@app.get("/collections", response_model=ListCollectionsResponse)
+async def list_collections():
+    return await process_list_collections()
+
+@app.get("/collections/{collection_id}", response_model=CollectionDetailResponse)
+async def get_collection(collection_id: int):
+    try:
+        return await process_get_collection(collection_id)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.post("/collections/add-snippet", response_model=AddSnippetResponse)
+async def add_snippet(req: AddSnippetRequest):
+    try:
+        return await process_add_snippet(req)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
 
 # One compiled graph instance, reused for every turn on every tab.
 # It has no memory of its own — memory lives in the ChatStore below and

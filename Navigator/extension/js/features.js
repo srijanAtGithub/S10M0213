@@ -21,6 +21,14 @@ const summaryContent = document.getElementById("summary-content");
 const btnOkSummary = document.getElementById("btn-ok-summary");
 const btnAddChatSummary = document.getElementById("btn-add-chat-summary");
 
+const collectionsPickerOverlay = document.getElementById("collections-picker-overlay");
+const collectionsPickerPreview = document.getElementById("collections-picker-preview");
+const collectionsPickerInput = document.getElementById("collections-picker-input");
+const collectionsPickerList = document.getElementById("collections-picker-list");
+const collectionsCreateBtn = document.getElementById("collections-create-btn");
+const collectionsCreateBtnLabel = document.getElementById("collections-create-btn-label");
+const collectionsPickerCancel = document.getElementById("collections-picker-cancel");
+
 // Wire up the OK button to just close the overlay
 btnOkSummary?.addEventListener("click", () => {
   summaryOverlay.classList.remove("active");
@@ -44,6 +52,23 @@ btnAddChatSummary?.addEventListener("click", () => {
   // Close the window
   summaryOverlay.classList.remove("active");
 });
+
+// ── Saved Collections Viewer ──────────────────────────────────────────
+const collectionsViewOverlay = document.getElementById("collections-view-overlay");
+const collectionsViewList = document.getElementById("collections-view-list");
+const collectionsViewTitle = document.getElementById("collections-view-title");
+const collectionsViewBackBtn = document.getElementById("collections-view-back-btn");
+const collectionsViewActions = document.getElementById("collections-view-actions");
+
+// Clicking the background closes the overlay completely
+collectionsViewOverlay?.addEventListener("click", (e) => {
+  if (!e.target.closest(".organise-card")) {
+    collectionsViewOverlay.classList.remove("active");
+  }
+});
+
+// The "Back" button returns to the main collections list (Scene A)
+collectionsViewBackBtn?.addEventListener("click", openSavedCollectionsView);
 
 export let attachedContexts = [];
 let expandedContextIndices = new Set();
@@ -94,6 +119,11 @@ function handleQuickAction(action) {
     startSummarisePage();
     return;
   }
+  if (action === "saved-collections") {
+    openSavedCollectionsView();
+    return;
+  }
+
   const labels = {
     "summarise-page": "Summarise Page",
     "find-more-like-this": "Find More Like This",
@@ -154,6 +184,8 @@ dragOverlay.addEventListener("drop", (e) => {
   if (e.target.closest("#zone-context")) {
     attachedContexts.push(droppedText.trim());
     renderContextShelf();
+  } else if (e.target.closest("#zone-collections")) {
+    openCollectionsPicker(droppedText.trim());
   }
   clearDragHoverState();
 });
@@ -384,4 +416,257 @@ async function startSummarisePage() {
     // Stop the neural glow
     appWrap.classList.remove("busy");
   }
+}
+
+// ── Add to Collections Picker ───────────────────────────────────────
+// Drag-drop entry point is the "collections" branch in the drop
+// handler above. This owns the floating picker: it fetches existing
+// collections, filters them live as the user types, and posts to
+// /collections/add-snippet whether the user picks an existing
+// collection or types a brand new name ("Create & Add").
+
+let pendingSnippet = null; // { text, tab_title, url } captured at drop time
+let allCollections = [];   // last fetch from GET /collections
+
+async function openCollectionsPicker(text) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  pendingSnippet = {
+    text,
+    tab_title: tab?.title || "",
+    url: tab?.url || "",
+  };
+
+  collectionsPickerPreview.textContent = text;
+  collectionsPickerInput.value = "";
+  collectionsPickerOverlay.classList.add("active");
+
+  collectionsPickerList.innerHTML = `<div class="collections-picker-empty">Loading collections…</div>`;
+  updateCreateButton("");
+
+  try {
+    const res = await fetch(`http://${BACKEND_HOST}/collections`);
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const data = await res.json();
+    allCollections = data.collections || [];
+  } catch (err) {
+    allCollections = [];
+    collectionsPickerList.innerHTML = `<div class="collections-picker-empty">Couldn't reach the backend — is navigator_bridge.py running?</div>`;
+    return;
+  }
+
+  renderCollectionsList("");
+  collectionsPickerInput.focus();
+}
+
+function closeCollectionsPicker() {
+  collectionsPickerOverlay.classList.remove("active");
+  pendingSnippet = null;
+}
+
+collectionsPickerCancel?.addEventListener("click", closeCollectionsPicker);
+collectionsPickerOverlay?.addEventListener("click", (e) => {
+  if (!e.target.closest(".organise-card") && !e.target.closest(".collections-picker-cancel")) {
+    closeCollectionsPicker();
+  }
+});
+
+collectionsPickerInput?.addEventListener("input", () => {
+  const query = collectionsPickerInput.value.trim();
+  renderCollectionsList(query);
+  updateCreateButton(query);
+});
+
+collectionsPickerInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const query = collectionsPickerInput.value.trim();
+    const filtered = filterCollections(query);
+    // Exact existing match on Enter -> add to it directly; otherwise
+    // fall through to create-and-add, same as clicking the button.
+    const exact = filtered.find((c) => c.name.toLowerCase() === query.toLowerCase());
+    if (exact) {
+      submitSnippetToCollection(exact.name);
+    } else if (query) {
+      submitSnippetToCollection(query);
+    }
+  } else if (e.key === "Escape") {
+    closeCollectionsPicker();
+  }
+});
+
+collectionsCreateBtn?.addEventListener("click", () => {
+  const query = collectionsPickerInput.value.trim();
+  if (query) submitSnippetToCollection(query);
+});
+
+function filterCollections(query) {
+  if (!query) return allCollections;
+  const q = query.toLowerCase();
+  return allCollections.filter((c) => c.name.toLowerCase().includes(q));
+}
+
+function renderCollectionsList(query) {
+  const filtered = filterCollections(query);
+  collectionsPickerList.innerHTML = "";
+
+  if (filtered.length === 0) {
+    collectionsPickerList.innerHTML = `<div class="collections-picker-empty">${allCollections.length === 0 ? "No collections yet." : "No matching collections."
+      }</div>`;
+    return;
+  }
+
+  filtered.forEach((c) => {
+    const item = document.createElement("button");
+    item.className = "collection-picker-item";
+
+    const icon = document.createElement("span");
+    icon.className = "qa-icon";
+    icon.innerHTML = `<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6 3.5h5.5L15 7v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M11 3.5V7h3.5" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M7.5 10.5h5M7.5 13h3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    </svg>`;
+
+    const name = document.createElement("span");
+    name.className = "collection-picker-name";
+    name.textContent = c.name;
+
+    const count = document.createElement("span");
+    count.className = "collection-picker-count";
+    count.textContent = c.snippet_count;
+
+    item.appendChild(icon);
+    item.appendChild(name);
+    item.appendChild(count);
+
+    item.addEventListener("click", () => submitSnippetToCollection(c.name));
+    collectionsPickerList.appendChild(item);
+  });
+}
+
+function updateCreateButton(query) {
+  if (!query) {
+    collectionsCreateBtn.classList.add("hidden");
+    return;
+  }
+  const exists = allCollections.some((c) => c.name.toLowerCase() === query.toLowerCase());
+  if (exists) {
+    collectionsCreateBtn.classList.add("hidden");
+  } else {
+    collectionsCreateBtnLabel.textContent = `Create "${query}" & Add`;
+    collectionsCreateBtn.classList.remove("hidden");
+  }
+}
+
+async function submitSnippetToCollection(collectionName) {
+  if (!pendingSnippet) return;
+  const snippet = pendingSnippet;
+  closeCollectionsPicker();
+
+  try {
+    const res = await fetch(`http://${BACKEND_HOST}/collections/add-snippet`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        collection_name: collectionName,
+        text: snippet.text,
+        tab_title: snippet.tab_title,
+        url: snippet.url,
+      }),
+    });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const data = await res.json();
+    NotificationService.show(
+      data.created_new_collection
+        ? `Created "${data.collection_name}" and added snippet.`
+        : `Added to "${data.collection_name}".`
+    );
+  } catch (err) {
+    console.error("Add to collection failed:", err);
+    NotificationService.show("Couldn't save to collection — is the backend running?");
+  }
+}
+
+async function openSavedCollectionsView() {
+  collectionsViewOverlay.classList.add("active");
+  collectionsViewTitle.textContent = "Saved Collections";
+
+  // SCENE A: Hide the Back button completely
+  collectionsViewActions.style.display = "none";
+
+  collectionsViewList.innerHTML = `<div class="collections-picker-empty">Loading collections...</div>`;
+
+  try {
+    const res = await fetch(`http://${BACKEND_HOST}/collections`);
+    if (!res.ok) throw new Error("Failed to load");
+    const data = await res.json();
+    renderCollectionsView(data.collections || []);
+  } catch (err) {
+    collectionsViewList.innerHTML = `<div class="collections-picker-empty">Backend unreachable.</div>`;
+  }
+}
+
+function renderCollectionsView(collections) {
+  collectionsViewList.innerHTML = "";
+  if (collections.length === 0) {
+    collectionsViewList.innerHTML = `<div class="collections-picker-empty">No saved collections yet.</div>`;
+    return;
+  }
+
+  collections.forEach(c => {
+    const item = document.createElement("button");
+    item.className = "collection-view-item";
+    item.innerHTML = `
+      <div style="font-weight: 600;">${c.name}</div>
+      <div style="font-size: 11px; color: #8e8e93; margin-top: 3px;">${c.snippet_count} saved snippet${c.snippet_count !== 1 ? 's' : ''}</div>
+    `;
+
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openCollectionSnippets(c.id, c.name);
+    });
+
+    collectionsViewList.appendChild(item);
+  });
+}
+
+async function openCollectionSnippets(collectionId, collectionName) {
+  collectionsViewTitle.textContent = collectionName;
+
+  // SCENE B: Show the Back button
+  collectionsViewActions.style.display = "flex";
+
+  collectionsViewList.innerHTML = `<div class="collections-picker-empty">Loading snippets...</div>`;
+
+  try {
+    const res = await fetch(`http://${BACKEND_HOST}/collections/${collectionId}`);
+    if (!res.ok) throw new Error("Failed to load");
+    const data = await res.json();
+    renderSnippetsView(data.snippets || []);
+  } catch (err) {
+    collectionsViewList.innerHTML = `<div class="collections-picker-empty">Error loading snippets.</div>`;
+  }
+}
+
+function renderSnippetsView(snippets) {
+  collectionsViewList.innerHTML = "";
+  if (snippets.length === 0) {
+    collectionsViewList.innerHTML = `<div class="collections-picker-empty">This collection is empty.</div>`;
+    return;
+  }
+
+  snippets.forEach(s => {
+    const item = document.createElement("div");
+    item.className = "snippet-view-item";
+    const dateStr = new Date(s.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+    item.innerHTML = `
+      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
+        <div style="font-weight: 600; font-size: 11.5px; color: #e5e5ea; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%;">${s.tab_title || 'Unknown Source'}</div>
+        <div style="font-size: 10px; color: #636366;">${dateStr}</div>
+      </div>
+      <div class="snippet-text">${s.text}</div>
+    `;
+    collectionsViewList.appendChild(item);
+  });
 }
