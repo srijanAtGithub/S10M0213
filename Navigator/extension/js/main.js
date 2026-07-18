@@ -21,13 +21,11 @@ async function sendMessage() {
   }
 
   const mentionSnippet = getMentionedTabSnippet();
-
-  // Copy attachedContexts into a new array so we can safely push to it
-  const outgoingSnippets = mentionSnippet
+  const payloadSnippets = mentionSnippet
     ? [...attachedContexts, mentionSnippet]
     : [...attachedContexts];
 
-  // Fetch the collection text on the frontend so the UI can render it immediately!
+  // Fetch the collection text (AI needs this full content)
   if (hasMentionedCollection()) {
     try {
       const res = await fetch(`http://${BACKEND_HOST}/collections/${getMentionedCollectionId()}`);
@@ -35,9 +33,9 @@ async function sendMessage() {
         const data = await res.json();
         if (data.snippets && data.snippets.length > 0) {
           const coll_text = data.snippets.map(s => `- ${s.text}`).join("\n\n");
-          outgoingSnippets.push(`Collection: ${data.name}\n\n${coll_text}`);
+          payloadSnippets.push(`Collection: ${data.name}\n\n${coll_text}`);
         } else {
-          outgoingSnippets.push(`Collection: ${data.name} (Empty)`);
+          payloadSnippets.push(`Collection: ${data.name}\n\n(Empty)`);
         }
       }
     } catch (err) {
@@ -45,21 +43,30 @@ async function sendMessage() {
     }
   }
 
-  // Render the UI chips (this will now render the collection visually!)
-  addContextTrail(outgoingSnippets);
+  // --- NEW: Create a clean display array for the UI ---
+  const displaySnippets = payloadSnippets.map(snippet => {
+    // If it starts with our prefixes, take only the header line (before the \n\n)
+    if (snippet.startsWith('Tab: ') || snippet.startsWith('Collection: ')) {
+      return snippet.split('\n\n')[0];
+    }
+    // For manual drag/drop, just show the first 30 chars
+    return snippet.length > 30 ? snippet.substring(0, 30) + "..." : snippet;
+  });
+
+  // Render the UI with only the short labels
+  addContextTrail(displaySnippets);
+
   addMessage(text, "user");
   inputEl.value = "";
   setSending(true);
 
+  // Send the FULL content to the backend
   const fresh = await getActiveTabInfo();
-  currentTab.url = fresh.url;
-  currentTab.title = fresh.title;
-
   const payload = {
     text: text,
-    page_url: currentTab.url,
-    page_title: currentTab.title,
-    context_snippets: outgoingSnippets
+    page_url: fresh.url,
+    page_title: fresh.title,
+    context_snippets: payloadSnippets
   };
 
   socket.send(JSON.stringify(payload));
