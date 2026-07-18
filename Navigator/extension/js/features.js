@@ -615,13 +615,36 @@ function renderCollectionsView(collections) {
     const item = document.createElement("button");
     item.className = "collection-view-item";
     item.innerHTML = `
-      <div style="font-weight: 600;">${c.name}</div>
-      <div style="font-size: 11px; color: #8e8e93; margin-top: 3px;">${c.snippet_count} saved snippet${c.snippet_count !== 1 ? 's' : ''}</div>
+      <div style="padding-right: 32px; text-align: left;">
+        <div style="font-weight: 600;">${c.name}</div>
+        <div style="font-size: 11px; color: #8e8e93; margin-top: 3px;">${c.snippet_count} saved snippet${c.snippet_count !== 1 ? 's' : ''}</div>
+      </div>
+      <div class="item-delete-btn" title="Delete Collection">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+      </div>
     `;
 
     item.addEventListener("click", (e) => {
       e.stopPropagation();
       openCollectionSnippets(c.id, c.name);
+    });
+
+    const deleteBtn = item.querySelector('.item-delete-btn');
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation(); // Stop the card click from firing
+      if (!confirm(`Delete collection "${c.name}"?`)) return;
+
+      try {
+        const res = await fetch(`http://${BACKEND_HOST}/collections/${c.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error("Failed to delete");
+
+        item.remove();
+        NotificationService.show(`Deleted "${c.name}"`);
+      } catch (err) {
+        NotificationService.show("Error deleting collection.");
+      }
     });
 
     collectionsViewList.appendChild(item);
@@ -659,12 +682,36 @@ function renderSnippetsView(snippets) {
     const dateStr = new Date(s.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
     item.innerHTML = `
-      <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
-        <div style="font-weight: 600; font-size: 11.5px; color: #e5e5ea; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%;">${s.tab_title || 'Unknown Source'}</div>
-        <div style="font-size: 10px; color: #636366;">${dateStr}</div>
+      <div style="padding-right: 32px;">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;">
+          <div style="font-weight: 600; font-size: 11.5px; color: #e5e5ea; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%;">${s.tab_title || 'Unknown Source'}</div>
+          <div style="font-size: 10px; color: #636366;">${dateStr}</div>
+        </div>
+        <div class="snippet-text">${s.text}</div>
       </div>
-      <div class="snippet-text">${s.text}</div>
+      <div class="item-delete-btn" title="Delete Snippet">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+      </div>
     `;
+
+    const deleteBtn = item.querySelector('.item-delete-btn');
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm("Delete this snippet?")) return;
+
+      try {
+        const res = await fetch(`http://${BACKEND_HOST}/collections/snippets/${s.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error("Failed to delete");
+
+        item.remove();
+        NotificationService.show("Snippet deleted.");
+      } catch (err) {
+        NotificationService.show("Error deleting snippet.");
+      }
+    });
+
     collectionsViewList.appendChild(item);
   });
 }

@@ -786,6 +786,7 @@
     flex-direction: column;
     padding: 12px 14px;
     border-radius: 12px;
+    position: relative;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: #f2f2f7;
@@ -833,4 +834,42 @@
     margin-top: 6px;
     white-space: pre-wrap;
     line-height: 1.5;
+}
+
+/* --- Item Delete Button (Collections & Snippets) --- */
+.item-delete-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 69, 58, 0.15);
+    border: 1px solid rgba(255, 69, 58, 0.3);
+    color: #ff453a;
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.item-delete-btn:hover {
+    background: rgba(255, 69, 58, 0.25);
+    transform: translateY(-50%) scale(1.05);
+}
+
+.item-delete-btn:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+/* Reveal on card hover */
+.collection-view-item:hover .item-delete-btn,
+.snippet-view-item:hover .item-delete-btn {
+    opacity: 1;
+    pointer-events: auto;
 }

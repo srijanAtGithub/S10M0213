@@ -43,6 +43,8 @@ from Navigator.Task_Files.Collections import (
     process_list_collections,
     process_add_snippet,
     process_get_collection,
+    process_delete_collection,
+    process_delete_snippet,
 )
 
 log = structlog.get_logger()
@@ -90,6 +92,14 @@ async def get_collection(collection_id: int):
     except ValueError as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail=str(e))
+
+@app.delete("/collections/{collection_id}")
+async def delete_collection(collection_id: int):
+    return await process_delete_collection(collection_id)
+
+@app.delete("/collections/snippets/{snippet_id}")
+async def delete_snippet(snippet_id: int):
+    return await process_delete_snippet(snippet_id)
 
 @app.post("/collections/add-snippet", response_model=AddSnippetResponse)
 async def add_snippet(req: AddSnippetRequest):

@@ -260,3 +260,22 @@ async def process_get_collection(collection_id: int) -> CollectionDetailResponse
         created_at=collection["created_at"],
         snippets=snippets,
     )
+
+async def process_delete_collection(collection_id: int) -> dict:
+    """Deletes a collection and cascades the deletion to its nested snippets."""
+    _ensure_db()
+    with _connect() as conn:
+        conn.execute("DELETE FROM collections WHERE id = ?", (collection_id,))
+        
+    log.info("Deleted collection", collection_id=collection_id)
+    return {"status": "success", "deleted_collection_id": collection_id}
+
+
+async def process_delete_snippet(snippet_id: int) -> dict:
+    """Deletes a single snippet."""
+    _ensure_db()
+    with _connect() as conn:
+        conn.execute("DELETE FROM snippets WHERE id = ?", (snippet_id,))
+        
+    log.info("Deleted snippet", snippet_id=snippet_id)
+    return {"status": "success", "deleted_snippet_id": snippet_id}
