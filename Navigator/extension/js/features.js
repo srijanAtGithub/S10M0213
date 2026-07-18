@@ -21,6 +21,10 @@ const summaryContent = document.getElementById("summary-content");
 const btnOkSummary = document.getElementById("btn-ok-summary");
 const btnAddChatSummary = document.getElementById("btn-add-chat-summary");
 
+const findMoreOverlay = document.getElementById("find-more-overlay");
+const findMoreList = document.getElementById("find-more-list");
+const btnFindMore = document.getElementById("btn-find-more");
+
 const collectionsPickerOverlay = document.getElementById("collections-picker-overlay");
 const collectionsPickerPreview = document.getElementById("collections-picker-preview");
 const collectionsPickerInput = document.getElementById("collections-picker-input");
@@ -50,6 +54,23 @@ btnAddChatSummary?.addEventListener("click", () => {
 
   // Close the window
   summaryOverlay.classList.remove("active");
+});
+
+// "Find More" fetches another batch and appends it below the current
+// results — it deliberately does NOT close the overlay, so the existing
+// results stay visible the whole time. Dismissing the overlay is still
+// just a click on the dimmed background (handler below), same as every
+// other overlay in this UI.
+btnFindMore?.addEventListener("click", () => {
+  startFindMoreLikeThis({ append: true });
+});
+
+// Clicking the dimmed background (not the card) closes it too, same as
+// the collections view overlay's behaviour.
+findMoreOverlay?.addEventListener("click", (e) => {
+  if (!e.target.closest(".organise-card")) {
+    findMoreOverlay.classList.remove("active");
+  }
 });
 
 // ── Saved Collections Viewer ──────────────────────────────────────────
@@ -120,6 +141,10 @@ function handleQuickAction(action) {
   }
   if (action === "saved-collections") {
     openSavedCollectionsView();
+    return;
+  }
+  if (action === "find-more-like-this") {
+    startFindMoreLikeThis();
     return;
   }
 
@@ -413,6 +438,148 @@ async function startSummarisePage() {
     NotificationService.show("Failed to summarise page. Is the backend running?");
   } finally {
     // Stop the neural glow
+    appWrap.classList.remove("busy");
+  }
+}
+
+// Tracks every URL already shown in the current find-more session, so
+// repeated "Find More" clicks never resurface a link the user has already
+// seen. Reset whenever the quick action is triggered fresh (a new overlay
+// open, possibly for a different page) — see startFindMoreLikeThis's
+// `append` flag.
+let findMoreShownUrls = [];
+
+function renderFindMoreResults(results, { append = false } = {}) {
+  if (!append) {
+    findMoreList.innerHTML = "";
+    findMoreShownUrls = [];
+  }
+
+  if (!results || results.length === 0) {
+    if (!append) {
+      findMoreList.innerHTML = `<div class="find-more-empty">No related pages found for this one.</div>`;
+    }
+    // In append mode with zero new results, leave the existing list intact
+    // and let the caller surface a "nothing new" notification instead of
+    // wiping out what's already on screen.
+    return;
+  }
+
+  let firstNewItem = null;
+
+  results.forEach((r) => {
+    findMoreShownUrls.push(r.url);
+
+    const item = document.createElement("a");
+    // fluidPopIn is defined once in overlays.css and keyed off this class,
+    // so every batch — first load or a later "Find More" — gets the same
+    // pop-in entrance animation.
+    item.className = "link-result-item";
+    item.href = r.url;
+    item.target = "_blank";
+    item.rel = "noopener noreferrer";
+
+    const title = document.createElement("div");
+    title.className = "link-result-title";
+    title.textContent = r.title || r.url;
+
+    const url = document.createElement("div");
+    url.className = "link-result-url";
+    url.textContent = r.url;
+
+    const reason = document.createElement("div");
+    reason.className = "link-result-reason";
+    reason.textContent = r.reason || "";
+
+    item.appendChild(title);
+    item.appendChild(url);
+    if (r.reason) item.appendChild(reason);
+
+    findMoreList.appendChild(item);
+    if (!firstNewItem) firstNewItem = item;
+  });
+
+  // Auto-scroll to the first newly-added card so the user immediately
+  // sees the new batch instead of having to scroll down manually to find
+  // where the old results ended and the new ones begin.
+  if (append && firstNewItem) {
+    firstNewItem.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+async function startFindMoreLikeThis({ append = false } = {}) {
+  NotificationService.show(append ? "Finding more..." : "Finding related pages...");
+  appWrap.classList.add("busy");
+
+  // Fresh open (not a "Find More" click) starts a clean session — clear
+  // whatever was tracked from a previous page/overlay open.
+  if (!append) {
+    findMoreShownUrls = [];
+  }
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) throw new Error("No active tab found.");
+
+    // Same extraction step as Summarise Page — strip boilerplate tags,
+    // cap length so the fingerprinting call stays cheap.
+    const injectionResult = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: () => {
+        const clone = document.cloneNode(true);
+        const tagsToRemove = ['nav', 'footer', 'aside', 'script', 'style', 'noscript', 'header'];
+        tagsToRemove.forEach(tag => {
+          const elements = clone.querySelectorAll(tag);
+          elements.forEach(el => el.parentNode?.removeChild(el));
+        });
+        return clone.body ? clone.body.innerText.substring(0, 5000) : "";
+      }
+    });
+
+    const cleanText = injectionResult[0]?.result || "";
+
+    if (!cleanText) {
+      throw new Error("Could not extract text from this page.");
+    }
+
+    const response = await fetch(`http://${BACKEND_HOST}/find-more-like-this`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url: tab.url,
+        title: tab.title,
+        content: cleanText,
+        // Backend excludes these from both the search-candidate pool and
+        // the ranking step, so "Find More" never re-surfaces a link
+        // that's already on screen.
+        exclude_urls: findMoreShownUrls,
+      })
+    });
+
+    if (!response.ok) throw new Error(`HTTP Error Status: ${response.status}`);
+
+    const data = await response.json();
+
+    if (data.error && (!data.results || data.results.length === 0)) {
+      if (append) {
+        // Don't wipe the existing list on a failed "Find More" — just
+        // tell the user nothing new turned up this time.
+        NotificationService.show(data.error);
+      } else {
+        findMoreList.innerHTML = `<div class="find-more-empty">${data.error}</div>`;
+      }
+    } else {
+      renderFindMoreResults(data.results, { append });
+    }
+
+    // Opening (or re-opening) the overlay is idempotent — safe to call on
+    // every run, and required on the very first run.
+    findMoreOverlay.classList.add("active");
+
+  } catch (err) {
+    console.error("Find more like this error:", err);
+    NotificationService.show("Failed to find related pages. Is the backend running?");
+  } finally {
     appWrap.classList.remove("busy");
   }
 }

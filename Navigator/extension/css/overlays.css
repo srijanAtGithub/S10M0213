@@ -454,7 +454,7 @@
     min-height: 0;
     overflow-y: auto;
     margin: 5px 0;
-    padding: 6px 0px;
+    padding: 14px 0px;
     white-space: pre-wrap;
     box-sizing: border-box;
 
@@ -462,14 +462,14 @@
     -webkit-mask-image:
         linear-gradient(to bottom,
             transparent 0%,
-            black 5%,
-            black 95%,
+            black 12px,
+            black calc(100% - 12px),
             transparent 100%);
     mask-image:
         linear-gradient(to bottom,
             transparent 0%,
-            black 5%,
-            black 95%,
+            black 12px,
+            black calc(100% - 12px),
             transparent 100%);
 }
 
@@ -535,6 +535,126 @@
 
 .summary-floating-btn.highlight:hover {
     background: rgba(255, 255, 255, 0.18);
+}
+
+/* --- Find More Like This Glass Overlay --- */
+/* Same shell as #summary-overlay; body is a scrollable link list instead
+   of plain text, reusing .collection-view-item's card language. */
+#find-more-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 110;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#find-more-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#find-more-overlay .organise-card {
+    max-width: 100%;
+    width: 550px;
+    max-height: 85vh;
+    flex: 1;
+    min-height: 0;
+}
+
+#find-more-overlay.active .organise-card {
+    transform: scale(1);
+}
+
+.find-more-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    margin: 4px -6px;
+    padding: 14px 2px;
+    box-sizing: border-box;
+
+    -webkit-mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 12px,
+            black calc(100% - 12px),
+            transparent 100%);
+    mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 12px,
+            black calc(100% - 12px),
+            transparent 100%);
+}
+
+/* Individual related-link card — same interactive feel as .collection-view-item,
+   but opens the URL in a new tab on click instead of drilling into a sub-view. */
+.link-result-item {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #f2f2f7;
+    font-size: 13px;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+    animation: fluidPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.link-result-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-1px);
+}
+
+.link-result-item:active {
+    transform: scale(0.98);
+}
+
+.link-result-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #f2f2f7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.link-result-url {
+    font-size: 10.5px;
+    color: #8e8e93;
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.link-result-reason {
+    font-size: 12px;
+    color: #a1a1aa;
+    margin-top: 12px;
+    line-height: 1.5;
+}
+
+.find-more-empty {
+    font-size: 12px;
+    color: #8e8e93;
+    text-align: center;
+    padding: 30px 10px;
+    line-height: 1.6;
 }
 
 /* --- Add to Collections Picker Overlay --- */
@@ -754,7 +874,7 @@
 #collections-view-overlay .organise-card {
     max-width: 100%;
     width: 550px;
-    max-height: 90vh;
+    max-height: 85vh;
 }
 
 /* --- Saved Collections / Snippets View List - Soft Fade --- */

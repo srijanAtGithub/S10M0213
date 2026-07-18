@@ -35,6 +35,7 @@ from Navigator.Task_Files.ChatStore import ChatStore
 from Navigator.Task_Files.Organise_Tabs import OrganiseTabsRequest, process_organise_tabs
 from Navigator.Task_Files.Edit_Selection import EditSelectionRequest, EditSelectionResponse, process_edit_selection
 from Navigator.Task_Files.Summarise_Page import SummarisePageRequest, SummarisePageResponse, process_summarise_page
+from Navigator.Task_Files.Find_More_Like_This import FindMoreLikeThisRequest, FindMoreLikeThisResponse, process_find_more_like_this
 from Navigator.Task_Files.Collections import (
     ListCollectionsResponse,
     AddSnippetRequest,
@@ -74,6 +75,10 @@ async def edit_selection(req: EditSelectionRequest):
 @app.post("/summarise-page", response_model=SummarisePageResponse)
 async def summarise_page(req: SummarisePageRequest):
     return await process_summarise_page(req)
+
+@app.post("/find-more-like-this", response_model=FindMoreLikeThisResponse)
+async def find_more_like_this(req: FindMoreLikeThisRequest):
+    return await process_find_more_like_this(req)
 
 # ── Saved Collections ────────────────────────────────────────────────
 # Drag-and-drop-to-collections feature: dropping a text snippet on the
