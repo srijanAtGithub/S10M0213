@@ -1,4 +1,5 @@
 import { NotificationService } from "./notifications.js";
+import { BACKEND_HOST } from "./api.js";
 
 /**
  * @-mention tab picker.
@@ -24,13 +25,16 @@ const inputRow = document.getElementById("input-row");
 // ── State ────────────────────────────────────────────────────────────
 // The currently mentioned tab's extracted content + metadata, or null.
 let mentionedTab = null; // { tabId, title, url, favIconUrl, content }
+let mentionedCollection = null; // { id, name }
 
-// Mention-typing state: are we mid "@filter" in the input right now?
+// Mention-typing state: are we mid "@filter" or "#filter" in the input right now?
 let mentionActive = false;
-let mentionStartIndex = -1; // index of the "@" character in inputEl.value
+let mentionType = null; // '@' or '#'
+let mentionStartIndex = -1; // index of the trigger character in inputEl.value
 
 let dropdownEl = null;
 let allTabsCache = []; // refreshed each time the dropdown opens
+let allCollectionsCache = []; // refreshed each time the # dropdown opens
 let highlightedIndex = 0;
 
 // ── Public API ───────────────────────────────────────────────────────
@@ -43,7 +47,7 @@ export function getMentionedTabSnippet() {
     // the backend (which just folds context_snippets into the turn) needs
     // no changes at all.
     if (!mentionedTab) return null;
-    return `[Full page content — Tab: "${mentionedTab.title}"]\n\n${mentionedTab.content}`;
+    return `Tab: "${mentionedTab.title}"]\n\n${mentionedTab.content}`;
 }
 
 export function hasMentionedTab() {
@@ -54,6 +58,20 @@ export function clearMentionedTab({ animate = true } = {}) {
     if (!mentionedTab) return;
     mentionedTab = null;
     hideUsingBar(animate);
+}
+
+export function getMentionedCollectionId() {
+    return mentionedCollection ? mentionedCollection.id : null;
+}
+
+export function hasMentionedCollection() {
+    return !!mentionedCollection;
+}
+
+export function clearMentionedCollection({ animate = true } = {}) {
+    if (!mentionedCollection) return;
+    mentionedCollection = null;
+    hideUsingCollectionBar(animate);
 }
 
 export function isMentionDropdownOpen() {
@@ -292,6 +310,83 @@ async function selectTabForMention(tab) {
     }
 }
 
+// ── "Using: collection" bar ──────────────────────────────────────────
+let usingCollectionBarEl = null;
+
+function ensureUsingCollectionBarEl() {
+    if (usingCollectionBarEl) return usingCollectionBarEl;
+
+    usingCollectionBarEl = document.createElement("div");
+    usingCollectionBarEl.className = "using-tab-bar";
+
+    const iconWrap = document.createElement("div");
+    iconWrap.className = "using-tab-icon";
+    iconWrap.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`;
+
+    const label = document.createElement("div");
+    label.className = "using-tab-label";
+
+    const prefix = document.createElement("span");
+    prefix.className = "using-tab-prefix";
+    prefix.textContent = "Using Collection: ";
+
+    const name = document.createElement("span");
+    name.className = "using-tab-name";
+
+    label.appendChild(prefix);
+    label.appendChild(name);
+
+    const closeBtn = document.createElement("div");
+    closeBtn.className = "using-tab-close";
+    closeBtn.innerHTML = "&times;";
+    closeBtn.title = "Stop using this collection";
+    closeBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        clearMentionedCollection();
+    });
+
+    usingCollectionBarEl.appendChild(iconWrap);
+    usingCollectionBarEl.appendChild(label);
+    usingCollectionBarEl.appendChild(closeBtn);
+
+    bottomDock.insertBefore(usingCollectionBarEl, inputRow);
+    return usingCollectionBarEl;
+}
+
+function showUsingCollectionBar(collection, { animate = true } = {}) {
+    const el = ensureUsingCollectionBarEl();
+    const nameEl = el.querySelector(".using-tab-name");
+    nameEl.textContent = collection.name || "Untitled Collection";
+
+    el.classList.remove("using-tab-bar--born");
+    el.classList.add("using-tab-bar--visible");
+    if (animate) {
+        void el.offsetWidth;
+        el.classList.add("using-tab-bar--born");
+    }
+}
+
+function hideUsingCollectionBar(animate = true) {
+    if (!usingCollectionBarEl) return;
+    if (!animate) {
+        usingCollectionBarEl.classList.remove("using-tab-bar--visible", "using-tab-bar--born");
+        return;
+    }
+    usingCollectionBarEl.classList.add("using-tab-bar--leaving");
+    usingCollectionBarEl.classList.remove("using-tab-bar--visible");
+    setTimeout(() => {
+        usingCollectionBarEl?.classList.remove("using-tab-bar--leaving", "using-tab-bar--born");
+    }, 320);
+}
+
+function selectCollectionForMention(collection) {
+    removeMentionTextFromInput();
+    closeDropdown();
+    mentionedCollection = { id: collection.id, name: collection.name };
+    showUsingCollectionBar(mentionedCollection, { animate: true });
+    inputEl.focus();
+}
+
 // ── Dropdown ─────────────────────────────────────────────────────────
 function ensureDropdownEl() {
     if (dropdownEl) return dropdownEl;
@@ -306,18 +401,23 @@ function renderDropdown(filter) {
     const el = ensureDropdownEl();
     const q = filter.trim().toLowerCase();
 
-    const filtered = q
-        ? allTabsCache.filter(t =>
-            (t.title || "").toLowerCase().includes(q) ||
-            (t.url || "").toLowerCase().includes(q))
-        : allTabsCache;
+    let filtered = [];
+    if (mentionType === "@") {
+        filtered = q
+            ? allTabsCache.filter(t => (t.title || "").toLowerCase().includes(q) || (t.url || "").toLowerCase().includes(q))
+            : allTabsCache;
+    } else {
+        filtered = q
+            ? allCollectionsCache.filter(c => (c.name || "").toLowerCase().includes(q))
+            : allCollectionsCache;
+    }
 
     el.innerHTML = "";
 
     if (filtered.length === 0) {
         const empty = document.createElement("div");
         empty.className = "mention-dropdown-empty";
-        empty.textContent = "No matching tabs";
+        empty.textContent = mentionType === "@" ? "No matching tabs" : "No matching collections";
         el.appendChild(empty);
         el.classList.add("mention-dropdown--visible");
         return;
@@ -325,37 +425,44 @@ function renderDropdown(filter) {
 
     highlightedIndex = Math.min(highlightedIndex, filtered.length - 1);
 
-    filtered.forEach((tab, idx) => {
-        const item = document.createElement("div");
-        item.className = "mention-dropdown-item" + (idx === highlightedIndex ? " highlighted" : "");
+    filtered.forEach((item, idx) => {
+        const row = document.createElement("div");
+        row.className = "mention-dropdown-item" + (idx === highlightedIndex ? " highlighted" : "");
 
         const icon = document.createElement("div");
         icon.className = "mention-dropdown-icon";
-        setTabIcon(icon, tab.favIconUrl);
+
+        if (mentionType === "@") {
+            setTabIcon(icon, item.favIconUrl);
+        } else {
+            icon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`;
+        }
 
         const textWrap = document.createElement("div");
         textWrap.className = "mention-dropdown-text";
 
         const titleEl = document.createElement("div");
         titleEl.className = "mention-dropdown-title";
-        titleEl.textContent = tab.title || "(untitled)";
-        // Full URL still lives in the title attribute for anyone who wants
-        // to hover-disambiguate near-identical tab titles, without taking
-        // up a permanent visible line in the list.
-        titleEl.title = tab.url || "";
+
+        if (mentionType === "@") {
+            titleEl.textContent = item.title || "(untitled)";
+            titleEl.title = item.url || "";
+        } else {
+            titleEl.textContent = item.name;
+        }
 
         textWrap.appendChild(titleEl);
 
-        item.appendChild(icon);
-        item.appendChild(textWrap);
+        row.appendChild(icon);
+        row.appendChild(textWrap);
 
-        item.addEventListener("mousedown", (e) => {
-            // mousedown (not click) so it fires before the input's blur.
+        row.addEventListener("mousedown", (e) => {
             e.preventDefault();
-            selectTabForMention(tab);
+            if (mentionType === "@") selectTabForMention(item);
+            else selectCollectionForMention(item);
         });
 
-        el.appendChild(item);
+        el.appendChild(row);
     });
 
     el._filteredTabs = filtered;
@@ -369,6 +476,7 @@ function renderDropdown(filter) {
 
 function closeDropdown() {
     mentionActive = false;
+    mentionType = null;
     mentionStartIndex = -1;
     if (dropdownEl) {
         dropdownEl.classList.remove("mention-dropdown--visible");
@@ -376,14 +484,27 @@ function closeDropdown() {
 }
 
 async function openDropdown() {
-    try {
-        const tabs = await chrome.tabs.query({});
-        allTabsCache = tabs.filter(isScriptableTab);
-    } catch (err) {
-        console.error("Failed to query tabs:", err);
-        allTabsCache = [];
-    }
     highlightedIndex = 0;
+    if (mentionType === "@") {
+        try {
+            const tabs = await chrome.tabs.query({});
+            allTabsCache = tabs.filter(isScriptableTab);
+        } catch (err) {
+            console.error("Failed to query tabs:", err);
+            allTabsCache = [];
+        }
+    } else if (mentionType === "#") {
+        try {
+            const res = await fetch(`http://${BACKEND_HOST}/collections`);
+            if (res.ok) {
+                const data = await res.json();
+                allCollectionsCache = data.collections || [];
+            }
+        } catch (err) {
+            console.error("Failed to fetch collections:", err);
+            allCollectionsCache = [];
+        }
+    }
     renderDropdown("");
 }
 
@@ -399,24 +520,24 @@ function removeMentionTextFromInput() {
     const newCaret = before.length;
     inputEl.setSelectionRange(newCaret, newCaret);
     mentionActive = false;
+    mentionType = null;
     mentionStartIndex = -1;
 }
 
+// ── Input wiring ─────────────────────────────────────────────────────
 // ── Input wiring ─────────────────────────────────────────────────────
 inputEl.addEventListener("input", () => {
     const value = inputEl.value;
     const caret = inputEl.selectionStart ?? value.length;
 
     if (!mentionActive) {
-        // Detect a freshly-typed "@" immediately before the caret, and only
-        // when it starts a token (start of input or preceded by whitespace)
-        // so email-like text or "user@host" doesn't trigger it.
         const charBeforeCaret = value[caret - 1];
-        if (charBeforeCaret === "@") {
+        if (charBeforeCaret === "@" || charBeforeCaret === "#") {
             const precedingChar = value[caret - 2];
             const startsToken = caret === 1 || precedingChar === undefined || /\s/.test(precedingChar);
             if (startsToken) {
                 mentionActive = true;
+                mentionType = charBeforeCaret;
                 mentionStartIndex = caret - 1;
                 openDropdown();
                 return;
@@ -425,9 +546,7 @@ inputEl.addEventListener("input", () => {
         return;
     }
 
-    // Mention is active: keep filtering, or close if the "@" got deleted
-    // or the user typed a space/newline (ends the token).
-    if (caret <= mentionStartIndex || value[mentionStartIndex] !== "@") {
+    if (caret <= mentionStartIndex || value[mentionStartIndex] !== mentionType) {
         closeDropdown();
         return;
     }
@@ -460,7 +579,9 @@ inputEl.addEventListener("keydown", (e) => {
         if (filtered.length) {
             e.preventDefault();
             e.stopImmediatePropagation();
-            selectTabForMention(filtered[highlightedIndex]);
+            const item = filtered[highlightedIndex];
+            if (mentionType === "@") selectTabForMention(item);
+            else selectCollectionForMention(item);
         }
     } else if (e.key === "Escape") {
         e.preventDefault();

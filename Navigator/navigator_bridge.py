@@ -173,7 +173,7 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
             user_text = (payload.get("text") or "").strip()
             page_url = payload.get("page_url") or ""
             page_title = payload.get("page_title") or ""
-            # 1. Extract the drag-and-dropped snippets array from frontend
+            
             context_snippets = payload.get("context_snippets") or []
 
             log.info("Received message", tab_id=tab_id, text=user_text, page_url=page_url, snippets_count=len(context_snippets))

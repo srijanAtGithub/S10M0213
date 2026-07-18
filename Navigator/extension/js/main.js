@@ -1,8 +1,11 @@
 import { NotificationService } from "./notifications.js";
 import { addMessage, clearMessagesUI, addContextTrail, setSending, sendBtn, appWrap } from "./ui.js";
-import { socket, getActiveTabInfo, loadHistory, clearHistoryOnBackend, connectSocket } from "./api.js";
+import { socket, getActiveTabInfo, loadHistory, clearHistoryOnBackend, connectSocket, BACKEND_HOST } from "./api.js";
 import { attachedContexts, clearAttachedContexts } from "./features.js";
-import { getMentionedTabSnippet, hasMentionedTab, clearMentionedTab, isMentionDropdownOpen } from "./mentions.js";
+import {
+  getMentionedTabSnippet, hasMentionedTab, clearMentionedTab, isMentionDropdownOpen,
+  hasMentionedCollection, getMentionedCollectionId, clearMentionedCollection
+} from "./mentions.js";
 
 const inputEl = document.getElementById("input-box");
 const clearBtn = document.getElementById("clear-btn");
@@ -17,15 +20,32 @@ async function sendMessage() {
     return;
   }
 
-  // The mentioned tab's full page content rides alongside any manually
-  // attached snippets (drag/drop, summaries) as one more context_snippets
-  // entry — the backend already folds every snippet into the turn
-  // generically, so no bridge/graph changes are needed for this.
   const mentionSnippet = getMentionedTabSnippet();
+
+  // Copy attachedContexts into a new array so we can safely push to it
   const outgoingSnippets = mentionSnippet
     ? [...attachedContexts, mentionSnippet]
-    : attachedContexts;
+    : [...attachedContexts];
 
+  // Fetch the collection text on the frontend so the UI can render it immediately!
+  if (hasMentionedCollection()) {
+    try {
+      const res = await fetch(`http://${BACKEND_HOST}/collections/${getMentionedCollectionId()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.snippets && data.snippets.length > 0) {
+          const coll_text = data.snippets.map(s => `- ${s.text}`).join("\n\n");
+          outgoingSnippets.push(`Collection: ${data.name}\n\n${coll_text}`);
+        } else {
+          outgoingSnippets.push(`Collection: ${data.name} (Empty)`);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load collection text:", err);
+    }
+  }
+
+  // Render the UI chips (this will now render the collection visually!)
   addContextTrail(outgoingSnippets);
   addMessage(text, "user");
   inputEl.value = "";
@@ -45,6 +65,7 @@ async function sendMessage() {
   socket.send(JSON.stringify(payload));
   clearAttachedContexts();
   if (hasMentionedTab()) clearMentionedTab();
+  if (hasMentionedCollection()) clearMentionedCollection();
 }
 
 async function handleClear() {
