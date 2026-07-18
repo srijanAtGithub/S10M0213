@@ -1,6 +1,3 @@
-import { NotificationService } from "./notifications.js";
-import { BACKEND_HOST } from "./api.js";
-
 /**
  * @-mention tab picker.
  *
@@ -17,6 +14,9 @@ import { BACKEND_HOST } from "./api.js";
  * Re-mentioning a tab REPLACES the current mention (there is only ever one
  * mentioned tab at a time) rather than stacking, per spec.
  */
+
+import { NotificationService } from "./notifications.js";
+import { BACKEND_HOST } from "./api.js";
 
 const inputEl = document.getElementById("input-box");
 const bottomDock = document.getElementById("bottom-dock");
@@ -96,7 +96,7 @@ function ensureUsingBarEl() {
 
     const prefix = document.createElement("span");
     prefix.className = "using-tab-prefix";
-    prefix.textContent = "Using: ";
+    prefix.textContent = "Using Tab: ";
 
     const name = document.createElement("span");
     name.className = "using-tab-name";
@@ -279,8 +279,6 @@ async function selectTabForMention(tab) {
     // silently no-ops, leaving the stray "@" sitting in the box.
     removeMentionTextFromInput();
     closeDropdown();
-
-    NotificationService.show(`Reading "${tab.title || tab.url}"...`);
 
     try {
         const content = await extractFullPageTextWithRetry(tab);

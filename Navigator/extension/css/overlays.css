@@ -428,7 +428,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: 10px 20px;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -442,16 +442,19 @@
 #summary-overlay .organise-card {
     max-width: 100%;
     width: 550px;
+    flex: 1;
+    min-height: 0;
 }
 
 .summary-text {
     font-size: 13px;
     color: #f2f2f7;
     line-height: 1.6;
-    max-height: 500px;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    margin: 10px 0;
-    padding: 12px 8px;
+    margin: 5px 0;
+    padding: 6px 0px;
     white-space: pre-wrap;
     box-sizing: border-box;
 
@@ -485,7 +488,7 @@
     display: flex;
     gap: 12px;
     /* Spaces the buttons apart horizontally */
-    margin-top: 16px;
+    margin-top: 8px;
     /* Adds the vertical gap between the card and the buttons */
     transform: scale(0.95);
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -737,7 +740,7 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 20px;
+    padding: 10px 20px;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -751,6 +754,8 @@
 #collections-view-overlay .organise-card {
     max-width: 100%;
     width: 550px;
+    flex: 1;
+    min-height: 0;
 }
 
 /* --- Saved Collections / Snippets View List - Soft Fade --- */
@@ -759,7 +764,8 @@
     flex-direction: column;
     gap: 6px;
     overflow-y: auto;
-    max-height: 500px;
+    flex: 1;
+    min-height: 0;
     margin: 4px -6px;
     padding: 8px 2px;
     box-sizing: border-box;
