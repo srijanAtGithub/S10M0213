@@ -754,8 +754,7 @@
 #collections-view-overlay .organise-card {
     max-width: 100%;
     width: 550px;
-    flex: 1;
-    min-height: 0;
+    max-height: 90vh;
 }
 
 /* --- Saved Collections / Snippets View List - Soft Fade --- */
@@ -767,7 +766,7 @@
     flex: 1;
     min-height: 0;
     margin: 4px -6px;
-    padding: 8px 2px;
+    padding: 14px 2px;
     box-sizing: border-box;
 
     /* Soft fade at top & bottom */
