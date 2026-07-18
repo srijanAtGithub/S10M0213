@@ -349,7 +349,9 @@
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-#organise-tabs-overlay.active .organise-card {
+#organise-tabs-overlay.active .organise-card,
+#summary-overlay.active .organise-card,
+#collections-view-overlay.active .organise-card {
     transform: scale(1);
 }
 
@@ -482,12 +484,15 @@
 .summary-actions {
     display: flex;
     gap: 12px;
-    /* Gap between the text card and the buttons */
+    /* Spaces the buttons apart horizontally */
+    margin-top: 16px;
+    /* Adds the vertical gap between the card and the buttons */
     transform: scale(0.95);
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-#summary-overlay.active .summary-actions {
+#summary-overlay.active .summary-actions,
+#collections-view-overlay.active .summary-actions {
     transform: scale(1);
 }
 
@@ -756,7 +761,7 @@
     overflow-y: auto;
     max-height: 500px;
     margin: 4px -6px;
-    padding: 8px 6px;
+    padding: 8px 2px;
     box-sizing: border-box;
 
     /* Soft fade at top & bottom */
@@ -787,6 +792,20 @@
     font-size: 13px;
     text-align: left;
     transition: background 0.15s ease, transform 0.1s ease;
+
+    animation: fluidPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fluidPopIn {
+    0% {
+        opacity: 0;
+        transform: translateY(6px) scale(0.98);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .collection-view-item {
