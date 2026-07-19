@@ -35,7 +35,8 @@ The Telegram interface where the agent lives day-to-day — chat naturally, and 
 `sicily start` launches Sicily as a local terminal assistant, sandboxed to whichever directory you run it from. No Telegram, no server, no scheduled tasks — just you and your files.
 
 <img src="Media/cowork_terminal_1.png" alt="Sicily Cowork Terminal" width="100%">
-<video src="Media/Cowork_Demo_Video_1.mp4" autoplay loop muted playsinline width="100%" controls></video>
+
+https://github.com/user-attachments/assets/0747b40f-929a-4504-959a-d72e426f2739
 
 Sicily indexes your files at startup using a **hybrid RAG pipeline** (TF-IDF keyword search + ChromaDB semantic search, merged via Reciprocal Rank Fusion) and uses that index as the first step before reading anything directly. The index is incremental and global — files already indexed from a previous session are reused, not re-embedded.
 
@@ -67,17 +68,17 @@ Navigator is a Chrome extension that brings Sicily to any web page, backed by a 
 
 **Right-click writing tools:** select any text on any page and get Apple-like writing tools in the context menu — rewrite, summarise, or ask a question about the selection, right where you're reading.
 
-<video src="Media/Writing_Tools_Demo.mp4" autoplay loop muted playsinline width="100%" controls></video>
+https://github.com/user-attachments/assets/97de426d-9e4c-41e9-82ce-99ffb57cc9f1
 
 **Side panel:** a persistent panel with its own set of reading and research tools —
 
 A persistent side panel for chatting, summarising, and organising as you browse — one-click page summaries, one-click tab organisation, and a "find more like this" for surfacing similar pages, plus a reading list to save pages for later.
 
-<video src="Media/Reading_Tools_Demo_1.mp4" autoplay loop muted playsinline width="100%" controls></video>
+https://github.com/user-attachments/assets/5f244172-a61f-4287-be19-9bbbb9c7a0ce
 
 Drag snippets into the chat or into topic-based collections, then pull them back in anytime — @ to reference an open tab, # to reference a collection.
 
-<video src="Media/Reading_Tools_Demo_2.mp4" autoplay loop muted playsinline width="100%" controls></video>
+https://github.com/user-attachments/assets/2216e3e7-65d6-4e80-b983-561251bbfc70
 
 ---
 
