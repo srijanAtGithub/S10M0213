@@ -49,6 +49,7 @@ History:
     navigator_bridge.py the same way.
 """
 
+import uuid
 import asyncio
 from typing import List, Optional
 
@@ -149,7 +150,43 @@ async def _build_fingerprint(
         content=f"URL: {url}\nTitle: {title}\n\nContent:\n{content}{extra_instruction}"
     )
 
-    return await llm.ainvoke([_FINGERPRINT_SYSTEM, human_msg])
+    fingerprint = None
+    session_id = f"fingerprint_{uuid.uuid4().hex[:8]}"
+    
+    try:
+        from usage_tracker import record_usage
+        async for event in llm.astream_events([_FINGERPRINT_SYSTEM, human_msg], version="v2"):
+            
+            if event["event"] == "on_chat_model_end":
+                output = event.get("data", {}).get("output")
+                if output and hasattr(output, "usage_metadata") and output.usage_metadata:
+                    usage = output.usage_metadata
+                    model_name = output.response_metadata.get("model_name", "unknown")
+                    
+                    try:
+                        record_usage(
+                            dimension="navigator",
+                            session_id=session_id,
+                            model_name=model_name,
+                            input_tokens=usage.get("input_tokens", 0),
+                            output_tokens=usage.get("output_tokens", 0),
+                            cached_input_tokens=usage.get("input_token_details", {}).get("cache_read_tokens", 0)
+                        )
+                    except Exception as rec_err:
+                        log.warning("record_usage failed for fingerprint", error=str(rec_err))
+                        
+            elif event["event"] == "on_chain_end":
+                data_out = event.get("data", {}).get("output")
+                if isinstance(data_out, _Fingerprint):
+                    fingerprint = data_out
+                    
+    except Exception as e:
+        log.warning("Failed during fingerprint event stream tracking", error=str(e))
+    
+    if not fingerprint:
+        fingerprint = await llm.ainvoke([_FINGERPRINT_SYSTEM, human_msg])
+
+    return fingerprint
 
 
 # ── STEP 2: SEARCH (Tavily API — real API, no scraping, no LLM) ─────────
@@ -275,7 +312,43 @@ async def _rank_candidates(
     # Same pattern as _build_fingerprint — schema=_RankResult gets back an
     # already-validated instance, no manual JSON parsing needed.
     llm = configuration.navigator_general_llm(schema=_RankResult)
-    rank_result: _RankResult = await llm.ainvoke([_RANK_SYSTEM, human_msg])
+    
+    rank_result = None
+    session_id = f"rank_{uuid.uuid4().hex[:8]}"
+    
+    try:
+        from usage_tracker import record_usage
+        async for event in llm.astream_events([_RANK_SYSTEM, human_msg], version="v2"):
+            
+            if event["event"] == "on_chat_model_end":
+                output = event.get("data", {}).get("output")
+                if output and hasattr(output, "usage_metadata") and output.usage_metadata:
+                    usage = output.usage_metadata
+                    model_name = output.response_metadata.get("model_name", "unknown")
+                    
+                    try:
+                        record_usage(
+                            dimension="navigator",
+                            session_id=session_id,
+                            model_name=model_name,
+                            input_tokens=usage.get("input_tokens", 0),
+                            output_tokens=usage.get("output_tokens", 0),
+                            cached_input_tokens=usage.get("input_token_details", {}).get("cache_read_tokens", 0)
+                        )
+                    except Exception as rec_err:
+                        log.warning("record_usage failed for rank", error=str(rec_err))
+                        
+            elif event["event"] == "on_chain_end":
+                data_out = event.get("data", {}).get("output")
+                if isinstance(data_out, _RankResult):
+                    rank_result = data_out
+                    
+    except Exception as e:
+        log.warning("Failed during rank event stream tracking", error=str(e))
+        
+    if not rank_result:
+        rank_result = await llm.ainvoke([_RANK_SYSTEM, human_msg])
+
     results = rank_result.results
 
     # Hard backstop: the source page and anything already shown can never

@@ -1,3 +1,5 @@
+import uuid
+
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import tool
@@ -81,6 +83,27 @@ async def process_organise_tabs(tabs: list[TabInfo]) -> dict:
     try:
         response = await llm_with_tools.ainvoke([system_msg, HumanMessage(content=prompt_text)])
         
+        # Track token usage from the returned message state
+        try:
+            from usage_tracker import record_usage
+            if hasattr(response, "usage_metadata") and response.usage_metadata:
+                usage = response.usage_metadata
+                model_name = response.response_metadata.get("model_name", "unknown")
+                msg_id = getattr(response, "id", None)
+                session_id = f"organise_{uuid.uuid4().hex[:8]}"
+                
+                record_usage(
+                    dimension="navigator",
+                    session_id=session_id,
+                    model_name=model_name,
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                    cached_input_tokens=usage.get("input_token_details", {}).get("cache_read_tokens", 0),
+                    message_id=msg_id
+                )
+        except Exception as rec_err:
+            log.warning("record_usage failed for organise", error=str(rec_err))
+
         # 1. Extract grouping plan from tool calls
         if response.tool_calls:
             for tool_call in response.tool_calls:
