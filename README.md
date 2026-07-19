@@ -35,6 +35,7 @@ The Telegram interface where the agent lives day-to-day — chat naturally, and 
 `sicily start` launches Sicily as a local terminal assistant, sandboxed to whichever directory you run it from. No Telegram, no server, no scheduled tasks — just you and your files.
 
 <img src="Media/cowork_terminal_1.png" alt="Sicily Cowork Terminal" width="100%">
+
 https://github.com/user-attachments/assets/0747b40f-929a-4504-959a-d72e426f2739
 
 Sicily indexes your files at startup using a **hybrid RAG pipeline** (TF-IDF keyword search + ChromaDB semantic search, merged via Reciprocal Rank Fusion) and uses that index as the first step before reading anything directly. The index is incremental and global — files already indexed from a previous session are reused, not re-embedded.
