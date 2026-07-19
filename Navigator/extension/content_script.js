@@ -61,7 +61,7 @@
     const style = document.createElement("style");
     style.id = "navigator-highlight-style";
     // Using a nice transparent version of your #3a6df0 blue
-    style.textContent = `::highlight(navigator-selection) { background-color: #3a6df0 !important; color: #ffffff !important; }`;
+    style.textContent = `::highlight(navigator-selection) { background-color: #6879a3ff !important; color: #ffffff !important; }`;
     document.head.appendChild(style);
   }
 
@@ -116,6 +116,123 @@
     return null;
   }
 
+  // ── Word-boundary snapping ──────────────────────────────────────────
+  // Users routinely drag-select from mid-word to mid-word. If we edit
+  // exactly that ragged span, the leftover fragments ("e" + "ional" from
+  // a selection that only grabbed "xcept" out of "exceptional") get left
+  // behind on either side of the replacement. Snap both ends outward to
+  // the nearest whole-word boundary before doing anything else with the
+  // range, so what we read, highlight, and eventually replace is always
+  // whole words — never fragments.
+  const wordSegmenter = (typeof Intl !== "undefined" && Intl.Segmenter)
+    ? new Intl.Segmenter(undefined, { granularity: "word" })
+    : null;
+
+  function isWordLike(segment) {
+    // Intl.Segmenter marks each segment isWordLike: true for actual words,
+    // false for whitespace/punctuation between them — exactly the split we
+    // want, and it's Unicode/locale-aware unlike a \w regex.
+    return segment.isWordLike;
+  }
+
+  function snapOffsetToWordBoundary(textNode, offset, direction) {
+    const full = textNode.data;
+    if (!wordSegmenter || !full) return offset;
+
+    // direction: "start" pulls the offset back to the start of whatever
+    // word it's inside of; "end" pushes it forward to the end of whatever
+    // word it's inside of. If the offset already sits exactly on a
+    // boundary (start or end of a word, or inside whitespace/punctuation),
+    // it's left alone — only genuine mid-word offsets get moved.
+    for (const seg of wordSegmenter.segment(full)) {
+      const segStart = seg.index;
+      const segEnd = seg.index + seg.segment.length;
+      if (offset > segStart && offset < segEnd && isWordLike(seg)) {
+        return direction === "start" ? segStart : segEnd;
+      }
+    }
+    return offset;
+  }
+
+  function expandRangeToWordBoundaries(range) {
+    try {
+      const newRange = range.cloneRange();
+
+      const startNode = newRange.startContainer;
+      if (startNode.nodeType === Node.TEXT_NODE) {
+        const newStart = snapOffsetToWordBoundary(startNode, newRange.startOffset, "start");
+        newRange.setStart(startNode, newStart);
+      }
+
+      const endNode = newRange.endContainer;
+      if (endNode.nodeType === Node.TEXT_NODE) {
+        const newEnd = snapOffsetToWordBoundary(endNode, newRange.endOffset, "end");
+        newRange.setEnd(endNode, newEnd);
+      }
+
+      return newRange;
+    } catch (e) {
+      // Any DOM range weirdness (e.g. non-text boundary nodes) — fall back
+      // to the original, unexpanded range rather than breaking selection
+      // entirely.
+      return range;
+    }
+  }
+
+  // ── Surrounding context extraction ──────────────────────────────────
+  // Grabs a bounded amount of text around the selection so the backend
+  // can match tone/register instead of rewriting the fragment in a
+  // vacuum. Capped in characters (not words) since that's what actually
+  // bounds prompt/token cost regardless of language. ~600 chars is
+  // roughly a paragraph-and-a-bit either side — enough to establish
+  // voice without ballooning the request.
+  const CONTEXT_MAX_CHARS = 600;
+
+  function extractSurroundingContext(selectionText, containerEl) {
+    if (!containerEl) return "";
+
+    // Walk up to a reasonably-sized block ancestor rather than reading
+    // the whole page — a paragraph/list-item/cell/message-bubble is the
+    // right unit of "surrounding" text; document.body would pull in nav
+    // bars, sidebars, and unrelated content that pollutes tone-matching
+    // more than it helps.
+    const BLOCK_TAGS = new Set([
+      "P", "DIV", "LI", "TD", "TH", "BLOCKQUOTE", "ARTICLE", "SECTION",
+      "TEXTAREA", "PRE", "FIGCAPTION",
+    ]);
+
+    let block = containerEl;
+    let hops = 0;
+    while (
+      block &&
+      block !== document.body &&
+      !BLOCK_TAGS.has(block.tagName) &&
+      hops < 6
+    ) {
+      block = block.parentElement;
+      hops++;
+    }
+    if (!block || block === document.body) block = containerEl;
+
+    const blockText = (block.innerText || block.textContent || "").trim();
+    if (!blockText) return "";
+
+    // If the block itself is already short, just use the whole thing.
+    if (blockText.length <= CONTEXT_MAX_CHARS) return blockText;
+
+    // Otherwise, center a window of CONTEXT_MAX_CHARS on wherever the
+    // selection sits inside the block text, so long blocks still surface
+    // the locally relevant surrounding sentences rather than always the
+    // start of the block.
+    const idx = blockText.indexOf(selectionText);
+    if (idx === -1) return blockText.slice(0, CONTEXT_MAX_CHARS);
+
+    const half = Math.floor(CONTEXT_MAX_CHARS / 2);
+    const start = Math.max(0, idx - half);
+    const end = Math.min(blockText.length, idx + selectionText.length + half);
+    return blockText.slice(start, end);
+  }
+
   function detectEditContext() {
     // Tier 1: an <input>/<textarea> with an active selection. Note that
     // window.getSelection() does NOT see into form controls in Chrome —
@@ -128,18 +245,37 @@
       (active.tagName === "TEXTAREA" || (active.tagName === "INPUT" && isTextLikeInput(active)))
     ) {
       if (typeof active.selectionStart === "number" && active.selectionStart !== active.selectionEnd) {
+        const { start, end } = expandFieldSelectionToWordBoundaries(
+          active.value, active.selectionStart, active.selectionEnd
+        );
         return {
           tier: "form",
           element: active,
-          start: active.selectionStart,
-          end: active.selectionEnd,
-          text: active.value.slice(active.selectionStart, active.selectionEnd),
-          // Approximate: positions under the whole field rather than the
-          // exact selected glyphs. Precise sub-field caret geometry needs
-          // a hidden-mirror-div measurement technique — skipped here.
+          start,
+          end,
+          text: active.value.slice(start, end),
           rect: active.getBoundingClientRect(),
+          pageContext: extractSurroundingContext(active.value.slice(start, end), active),
         };
       }
+    }
+
+    function expandFieldSelectionToWordBoundaries(value, start, end) {
+      if (!wordSegmenter || !value) return { start, end };
+
+      let newStart = start;
+      let newEnd = end;
+
+      for (const seg of wordSegmenter.segment(value)) {
+        const segStart = seg.index;
+        const segEnd = seg.index + seg.segment.length;
+        if (isWordLike(seg)) {
+          if (start > segStart && start < segEnd) newStart = segStart;
+          if (end > segStart && end < segEnd) newEnd = segEnd;
+        }
+      }
+
+      return { start: newStart, end: newEnd };
     }
 
     // Tiers 2/3/readonly all start from a real window selection.
@@ -148,8 +284,9 @@
       return null;
     }
 
-    const range = selection.getRangeAt(0);
-    const text = selection.toString();
+    const rawRange = selection.getRangeAt(0);
+    const range = expandRangeToWordBoundaries(rawRange);
+    const text = range.toString();
     const rect = range.getBoundingClientRect();
     const container = range.commonAncestorContainer;
     const el = container.nodeType === Node.TEXT_NODE ? container.parentElement : container;
@@ -159,12 +296,12 @@
 
     if (!editableRoot) {
       // Selected, but nothing editable underneath it — ordinary page text.
-      return { tier: "readonly", text, rect, range: range.cloneRange() };
+      return { tier: "readonly", text, rect, range: range.cloneRange(), pageContext: extractSurroundingContext(text, el) };
     }
 
     const framework = detectFramework(editableRoot);
     if (framework) {
-      return { tier: "rich-text", frameworkName: framework, text, rect, range: range.cloneRange() };
+      return { tier: "rich-text", frameworkName: framework, text, rect, range: range.cloneRange(), pageContext: extractSurroundingContext(text, editableRoot) };
     }
 
     return {
@@ -173,6 +310,7 @@
       root: editableRoot,
       text,
       rect,
+      pageContext: extractSurroundingContext(text, editableRoot),
     };
   }
 
@@ -336,12 +474,12 @@
         .wrap {
           width: 380px;
           border-radius: 18px; /* Classic smooth Apple corner */
-          border: 1px solid rgba(255, 255, 255, 0.12); /* Subtle edge definition */
+          border: 1px solid rgba(255, 255, 255, 0.18); /* Subtle edge definition */
           
           /* Glassmorphism Effect */
-          backdrop-filter: blur(35px); 
-          -webkit-backdrop-filter: blur(35px); /* Safari support */
-          background: rgba(44, 44, 46, 0.85); /* Premium Dark Mode Gray */
+          backdrop-filter: blur(30px); 
+          -webkit-backdrop-filter: blur(30px); /* Safari support */
+          background: rgba(25, 25, 26, 0.35); /* Premium Dark Mode Gray */
           
           /* The "Shader" / Glowing Border Effect */
           box-shadow: 
@@ -370,13 +508,18 @@
           position: relative;
         }
 
-        /* Common Styling for Input and Result Views */
+        /* Common Styling for Input and Result Views (Cinematic slide-and-fade) */
         .view {
           position: absolute;
           width: 100%;
           top: 0;
           opacity: 0;
-          transition: opacity 0.35s ease-in-out;
+          transform: translateY(12px) scale(0.97);
+          filter: blur(5px);
+          transition: 
+            opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1), 
+            transform 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+            filter 0.45s cubic-bezier(0.16, 1, 0.3, 1);
           pointer-events: none; /* Block interactions when hidden */
           display: block; /* Use block, control visibility via opacity */
         }
@@ -384,25 +527,55 @@
         .view.active {
           position: relative; /* Take up space for height calculation */
           opacity: 1;
+          transform: translateY(0) scale(1);
+          filter: blur(0px);
           pointer-events: auto; /* Enable interaction */
         }
 
-        /* --- Neural Glow Edge (Rotating Inner Border) --- */
-        .wrap.busy .neural-glow {
+        /* --- Full Window Scanning Scanline --- */
+        .wrap::before {
+          content: '';
           position: absolute;
-          top: 0; left: 0; right: 0; bottom: 0;
-          border-radius: 18px;
-          padding: 2px;
-          background: linear-gradient(135deg, rgba(94, 92, 230, 0.8), rgba(130, 240, 255, 0.9), rgba(94, 92, 230, 0.8));
-          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-          -webkit-mask-composite: destination-out;
-          mask-composite: exclude;
+          inset: 0;
+          background: linear-gradient(to bottom, transparent, rgba(130, 240, 255, 0.15), transparent);
+          transform: translateY(-100%);
+          pointer-events: none;
+          z-index: 5;
           opacity: 0;
           transition: opacity 0.3s ease;
         }
+        .wrap.busy::before {
+          opacity: 1;
+          animation: scanLine 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        }
+
+        @keyframes scanLine {
+          0% { transform: translateY(-100%); }
+          100% { transform: translateY(100%); }
+        }
+
+        /* --- Neural Glow Edge (Rotating Inner Border) & full container color drift --- */
+        .neural-glow {
+          position: absolute;
+          inset: 0;
+          border-radius: 18px;
+          pointer-events: none;
+          opacity: 0;
+          /* Animated color drift when busy */
+          background: radial-gradient(circle at 20% 30%, rgba(94, 92, 230, 0.25), transparent 50%),
+                      radial-gradient(circle at 80% 70%, rgba(249, 81, 165, 0.25), transparent 50%);
+          mix-blend-mode: screen;
+          transition: opacity 0.5s ease;
+          z-index: 1;
+        }
         .wrap.busy .neural-glow { 
           opacity: 1; 
-          animation: glowRotate 2s linear infinite; 
+          animation: neuralPulse 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes neuralPulse {
+          0% { filter: hue-rotate(0deg); }
+          100% { filter: hue-rotate(90deg); }
         }
 
         /* --- Outer Radiant Glow Backdrop (Escapes overflow: hidden) --- */
@@ -417,12 +590,15 @@
         }
 
         /* When the panel is busy, ignite the backdrop with synced rotation and breathing */
+        /*UNCOMMENT THE FOLLOWING TO HAVE THE BORDER GLOW AS WELL*/
+        /*
         .wrap.busy ~ .glow-backdrop {
           opacity: 1;
           animation: 
             glowRotate 2s linear infinite, 
             radiantPulse 1.5s ease-in-out infinite alternate;
         }
+        */
 
         @keyframes glowRotate { 
           100% { filter: hue-rotate(360deg); } 
@@ -471,53 +647,121 @@
           max-height: 160px;
           padding: 8px 12px;
           border-radius: 10px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          background: rgba(28, 28, 30, 0.6);
+          
+          /* Removed standard border, replaced with a near-invisible 4% opacity lining */
+          border: 1px solid rgba(255, 255, 255, 0.04); 
+          background: rgba(10, 10, 12, 0.45); /* Seamlessly integrates with the glass base */
+          
           color: #f2f2f7;
           font-size: 13.5px;
           outline: none;
-          transition: border-color 0.2s;
           resize: none;
           font-family: inherit;
           box-sizing: border-box;
           line-height: 1.5;
           overflow-y: auto;
+          
+          /* Added smooth ease-out for a gradual glow transition */
+          transition: border-color 0.25s ease-out, box-shadow 0.25s ease-out, opacity 0.3s ease;
         }
-        textarea:focus { border-color: rgba(94, 92, 230, 0.8); }
 
+        textarea:focus { 
+          /* Ultra-fine pink boundary line */
+          border-color: rgba(249, 81, 165, 0.3); 
+          
+          /* Fully covers the bounding box with a soft pink ambient glow */
+          box-shadow: 0 0 14px rgba(255, 105, 180, 0.25); 
+        }
+
+        /* --- Action Button Container (Grid Stacking) --- */
         .action-btns {
+          display: grid; /* Grid allows children to stack perfectly on top of each other */
+          align-self: flex-end; 
+          transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .btn-group {
+          grid-area: 1 / 1; /* Forces both groups into the exact same cell */
           display: flex;
           gap: 6px;
-          align-self: flex-end; /* Anchors the buttons to the bottom right under the text */
+          justify-content: flex-end;
+          transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), 
+                      transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                      filter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        /* --- Default State: Summarize & Rewrite --- */
+        .group-default {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          pointer-events: auto;
+          filter: blur(0px);
         }
         
-        .submit-btn {
+        /* The incoming state waits slightly below and blurred */
+        .group-typing {
+          opacity: 0;
+          transform: translateY(8px) scale(0.95);
+          pointer-events: none;
+          filter: blur(3px);
+        }
+
+        /* --- Typing State: Ask & Edit (Triggered by .has-text) --- */
+        /* Default buttons float up and blur out */
+        .action-btns.has-text .group-default {
+          opacity: 0;
+          transform: translateY(-8px) scale(0.95);
+          pointer-events: none;
+          filter: blur(3px);
+        }
+        
+        /* Typing buttons snap into focus */
+        .action-btns.has-text .group-typing {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+          pointer-events: auto;
+          filter: blur(0px);
+        }
+
+        /* --- Hide smoothly when backend is busy --- */
+        .wrap.busy .action-btns {
+          opacity: 0;
+          transform: translateY(12px);
+          pointer-events: none;
+        }
+        .wrap.busy textarea {
+          opacity: 0.4;
+          pointer-events: none;
+        }
+
+        /* --- Action & Submission Buttons (Uniform Glassmorphism) --- */
+        .submit-btn, .btn {
           padding: 9px 14px;
           border-radius: 10px;
-          border: none;
+          border: 1px solid rgba(255, 255, 255, 0.08); /* Crisp visible border */
           font-size: 13.5px;
           font-weight: 600;
           cursor: pointer;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-          transition: transform 0.1s, background 0.15s;
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          transition: transform 0.1s, background-color 0.15s;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
-        
-        /* The Ask Button - Translucent Gray */
-        .btn-ask {
-          background: rgba(120, 120, 128, 0.2);
+
+        /* All Action Buttons - Ultra Translucent Gray */
+        .btn-ask, .btn-edit, .btn-replace, .btn-summarise, .btn-rewrite {
+          background: rgba(255, 255, 255, 0.06);
           color: #f2f2f7;
         }
-        .btn-ask:hover:not(:disabled) { background: rgba(120, 120, 128, 0.4); }
-        
-        /* The Edit Button - Apple Purple */
-        .btn-edit {
-          background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
-          color: white;
+
+        /* Shared Hover Effect */
+        .btn-ask:hover:not(:disabled),
+        .btn-edit:hover:not(:disabled),
+        .btn-replace:hover,
+        .btn-summarise:hover:not(:disabled),
+        .btn-rewrite:hover:not(:disabled) { 
+          background: rgba(255, 255, 255, 0.12);
         }
-        .btn-edit:hover:not(:disabled) { background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%); }
-        
-        .submit-btn:active:not(:disabled) { transform: scale(0.96); }
-        .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .status {
           font-size: 11px;
@@ -553,30 +797,20 @@
           justify-content: flex-end;
           gap: 10px;
         }
-        .btn {
-          padding: 8px 16px;
-          border-radius: 10px;
-          border: none;
-          font-size: 13.5px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: background 0.15s, transform 0.1s;
-        }
-        .btn-replace {
-          background: linear-gradient(180deg, #5e5ce6 0%, #4a49c9 100%);
-          color: white;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-        }
-        .btn-replace:hover { background: linear-gradient(180deg, #6c6af2 0%, #5e5ce6 100%); }
-        
+
+        /* The Copy & Cancel Buttons - Standard Translucent Gray */
         .btn-copy, .btn-cancel {
-          background: rgba(120, 120, 128, 0.2); /* Apple Translucent Gray */
+          background: rgba(120, 120, 128, 0.2);
           color: #f2f2f7;
         }
-        .btn-copy:hover, .btn-cancel:hover { background: rgba(120, 120, 128, 0.3); }
-        .btn:active { transform: scale(0.97); }
+        .btn-copy:hover, .btn-cancel:hover { 
+          background: rgba(120, 120, 128, 0.3); 
+        }
 
-        .btn-success { background: #34c759 !important; } /* Green */
+        /* Global Button Interactions */
+        .submit-btn:active:not(:disabled), .btn:active { transform: scale(0.96); }
+        .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-success { background: #34c759 !important; border-color: transparent !important; }
       </style>
 
       <div class="wrap">
@@ -586,8 +820,16 @@
           <div class="view input-view active">
             <textarea placeholder="Ask or describe edit..." rows="1"></textarea>
             <div class="action-btns">
-              <button class="submit-btn btn-ask">Ask</button>
-              <button class="submit-btn btn-edit">Edit</button>
+              <!-- Default state buttons -->
+              <div class="btn-group group-default">
+                <button class="submit-btn btn-summarise">Summarize</button>
+                <button class="submit-btn btn-rewrite">Rewrite</button>
+              </div>
+              <!-- Typing state buttons -->
+              <div class="btn-group group-typing">
+                <button class="submit-btn btn-ask">Ask</button>
+                <button class="submit-btn btn-edit">Edit</button>
+              </div>
             </div>
           </div>
           
@@ -612,8 +854,11 @@
     const inputView = shadow.querySelector(".input-view");
     const resultView = shadow.querySelector(".result-view");
     const input = shadow.querySelector("textarea");
+    const actionBtns = shadow.querySelector(".action-btns");
     const askBtn = shadow.querySelector(".btn-ask");
     const editBtn = shadow.querySelector(".btn-edit");
+    const summariseBtn = shadow.querySelector(".btn-summarise");
+    const rewriteBtn = shadow.querySelector(".btn-rewrite");
     const status = shadow.querySelector(".status");
     const noticeEl = shadow.querySelector(".notice");
     const resultText = shadow.querySelector(".result-text");
@@ -710,7 +955,6 @@
     }
 
     // Morph the window from Input to Preview mode with animation
-    // Morph the window from Input to Preview mode with animation
     function showPreviewMode(text, actionType) {
       pendingAiText = text;
 
@@ -731,15 +975,29 @@
           noticeEl.style.display = "none";
         }
 
-        if (context.tier === "readonly") {
+        // Hide the replace button if the field is read-only OR if the action is an 'ask'
+        if (context.tier === "readonly" || actionType === "ask") {
           replaceBtn.style.display = "none";
+        } else {
+          replaceBtn.style.display = ""; // Restores the default button layout for regular edits
         }
       });
     }
 
     function submit(actionType) {
-      const instruction = input.value.trim();
-      if (!instruction) return;
+      let instruction = input.value.trim();
+
+      // Allow 'summarise' and 'rewrite' to proceed even if the text box is empty
+      if (!instruction) {
+        if (actionType === "summarise") {
+          instruction = "Summarise this text.";
+        } else if (actionType === "rewrite") {
+          instruction = "Rewrite this professionally.";
+        } else {
+          // If it's 'ask' or 'edit', we still strictly require user input
+          return;
+        }
+      }
 
       setBusy(true);
       status.style.display = "none";
@@ -749,7 +1007,8 @@
           type: "navigator-edit-selection-request",
           selected_text: context.text,
           instruction,
-          action_type: actionType
+          action_type: actionType,
+          surrounding_context: context.pageContext || ""
         },
         (response) => {
           setBusy(false);
@@ -770,11 +1029,20 @@
 
     askBtn.addEventListener("click", () => submit("ask"));
     editBtn.addEventListener("click", () => submit("edit"));
+    summariseBtn.addEventListener("click", () => submit("summarise"));
+    rewriteBtn.addEventListener("click", () => submit("rewrite"));
 
-    // Smooth auto-grow mechanic for the textarea
+    // Smooth auto-grow mechanic and state toggle for the buttons
     input.addEventListener("input", () => {
+      // Auto-grow
       input.style.height = "auto";
       input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
+
+      if (input.value.trim().length > 0) {
+        actionBtns.classList.add("has-text");
+      } else {
+        actionBtns.classList.remove("has-text");
+      }
     });
 
     input.addEventListener("keydown", (e) => {
@@ -789,13 +1057,13 @@
             input.style.height = `${Math.min(input.scrollHeight, 160)}px`;
           }, 0);
         } else if (e.ctrlKey || e.metaKey) {
-          // Ctrl+Enter or Cmd+Enter triggers the "Ask" flow
-          e.preventDefault();
-          submit("ask");
-        } else {
-          // Regular Enter triggers the primary "Edit" flow
+          // Ctrl+Enter or Cmd+Enter triggers the "Edit" flow
           e.preventDefault();
           submit("edit");
+        } else {
+          // Regular Enter triggers the primary "Ask" flow
+          e.preventDefault();
+          submit("ask");
         }
       }
       if (e.key === "Escape") closeActiveBox();

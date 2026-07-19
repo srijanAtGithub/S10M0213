@@ -1,0 +1,1216 @@
+/* --- Drag and Drop Glass Overlay --- */
+#drag-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    background: rgba(10, 10, 12, 0.45);
+    /* Smooth dimming layer */
+
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* Centers floating panels horizontally */
+    justify-content: center;
+    /* Centers floating panels vertically */
+    gap: 20px;
+    padding: 16px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* When active, the overlay becomes visible, but we let elements inside handle pointer rules */
+#drag-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* --- Elegant, Premium Drop Zones --- */
+.drop-zone {
+    width: 250px;
+    height: 110px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+
+    /* Glassmorphism applied ONLY to the floating windows */
+    background: rgba(30, 30, 32, 0.55);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    /* CRUCIAL: Forces the zone to explicitly capture pointer interactions */
+    pointer-events: auto;
+
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: copy;
+}
+
+/* CRUCIAL: Prevent internal text/icons from breaking the parent hover state */
+.zone-box,
+.zone-box *,
+.sub-label {
+    pointer-events: none !important;
+}
+
+.zone-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: #a1a1aa;
+    font-size: 13.5px;
+    font-weight: 500;
+}
+
+.zone-box svg {
+    width: 26px;
+    height: 26px;
+    opacity: 0.7;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.sub-label {
+    font-size: 11px;
+    opacity: 0.5;
+}
+
+/* --- Continuous Glowing Animations --- */
+@keyframes subtleGlowCollections {
+    0% {
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 15px rgba(255, 255, 255, 0.03);
+    }
+
+    50% {
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 25px rgba(255, 255, 255, 0.12);
+    }
+
+    100% {
+        box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 15px rgba(255, 255, 255, 0.03);
+    }
+}
+
+/* --- Drag Hover Actions --- */
+#zone-collections.drag-hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(50, 50, 55, 0.65);
+    transform: translateY(-2px) scale(1.02);
+    animation: subtleGlowCollections 2s infinite ease-in-out;
+}
+
+#zone-context.drag-hover {
+    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(50, 50, 55, 0.65);
+    transform: translateY(-2px) scale(1.02);
+    animation: subtleGlowCollections 2s infinite ease-in-out;
+}
+
+#zone-context.drag-hover .zone-box svg,
+#zone-collections.drag-hover .zone-box svg {
+    transform: scale(1.15) translateY(-2px);
+}
+
+/* --- Reusable Glass Notification System --- */
+#notification-container {
+    position: absolute;
+    top: 55px;
+    /* Floats perfectly just under the main header */
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+    width: 90%;
+    max-width: 320px;
+    z-index: 9999;
+    /* Float over everything */
+    pointer-events: none;
+    /* Allows clicks to pass through empty space */
+}
+
+.glass-notification {
+    pointer-events: auto;
+    /* Allows clicking close or interacting if needed */
+    width: 100%;
+    padding: 10px 16px;
+    border-radius: 12px;
+
+    /* Matching your premium Glassmorphism settings */
+    background: rgba(25, 25, 26, 0.55);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.4),
+        inset 0 0 1px rgba(255, 255, 255, 0.1);
+
+    color: #f2f2f7;
+    font-size: 12.5px;
+    font-weight: 500;
+    text-align: center;
+    line-height: 1.4;
+
+    /* Smooth transitions */
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+    transition:
+        opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Animation states */
+.glass-notification.show {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+/* --- Disconnected Screen Overlay --- */
+#disconnected-screen {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    background: rgba(10, 10, 12, 0.72);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#disconnected-screen.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Orb glow behind icon */
+.dc-orb {
+    position: relative;
+    width: 72px;
+    height: 72px;
+    margin-bottom: 24px;
+}
+
+.dc-orb-ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 80, 60, 0.35);
+    animation: dcRingPulse 2.4s ease-in-out infinite;
+}
+
+.dc-orb-ring:nth-child(2) {
+    inset: -10px;
+    border-color: rgba(255, 80, 60, 0.18);
+    animation-delay: 0.4s;
+}
+
+.dc-orb-ring:nth-child(3) {
+    inset: -22px;
+    border-color: rgba(255, 80, 60, 0.08);
+    animation-delay: 0.8s;
+}
+
+@keyframes dcRingPulse {
+
+    0%,
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+
+    50% {
+        transform: scale(1.1);
+        opacity: 0.5;
+    }
+}
+
+.dc-orb-core {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 35%, rgba(255, 100, 80, 0.25), rgba(20, 20, 22, 0.9) 70%);
+    border: 1px solid rgba(255, 80, 60, 0.3);
+    box-shadow:
+        0 0 22px rgba(255, 60, 40, 0.2),
+        inset 0 0 14px rgba(255, 60, 40, 0.12);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dc-orb-core svg {
+    width: 28px;
+    height: 28px;
+    color: rgba(255, 110, 90, 0.9);
+    filter: drop-shadow(0 0 6px rgba(255, 80, 60, 0.5));
+    animation: dcIconFloat 3s ease-in-out infinite;
+}
+
+@keyframes dcIconFloat {
+
+    0%,
+    100% {
+        transform: translateY(0);
+    }
+
+    50% {
+        transform: translateY(-3px);
+    }
+}
+
+.dc-title {
+    font-size: 15px;
+    font-weight: 650;
+    color: #f2f2f7;
+    letter-spacing: -0.2px;
+    margin-bottom: 8px;
+}
+
+.dc-subtitle {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.38);
+    line-height: 1.55;
+    text-align: center;
+    max-width: 210px;
+    margin-bottom: 28px;
+}
+
+.dc-code {
+    display: inline-block;
+    font-family: "SF Mono", "Fira Mono", Menlo, monospace;
+    font-size: 10.5px;
+    color: rgba(255, 200, 80, 0.75);
+    background: rgba(255, 200, 80, 0.06);
+    border: 1px solid rgba(255, 200, 80, 0.14);
+    border-radius: 5px;
+    padding: 1px 5px;
+}
+
+/* When disconnected, blur/dim the main content underneath */
+.wrap.offline #messages,
+.wrap.offline #bottom-dock {
+    filter: blur(3px);
+    pointer-events: none;
+    user-select: none;
+    transition: filter 0.4s ease;
+}
+
+.wrap.offline #header {
+    opacity: 0.4;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+}
+
+/* --- Organise Tabs Glass Overlay --- */
+#organise-tabs-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 110;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#organise-tabs-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.organise-card {
+    width: 100%;
+    max-width: 380px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(30, 30, 32, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(30px);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+    transform: scale(0.95);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#organise-tabs-overlay.active .organise-card,
+#summary-overlay.active .organise-card,
+#collections-view-overlay.active .organise-card {
+    transform: scale(1);
+}
+
+.organise-header {
+    font-size: 16px;
+    font-weight: 600;
+    color: #f2f2f7;
+    text-align: center;
+}
+
+.organise-sub {
+    font-size: 11.5px;
+    color: #a1a1aa;
+    text-align: center;
+    line-height: 1.5;
+    margin-bottom: 6px;
+}
+
+.organise-option-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 12px;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s ease;
+}
+
+.organise-option-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+.organise-option-btn:active {
+    transform: scale(0.98);
+}
+
+.organise-option-btn .btn-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f2f2f7;
+    margin-bottom: 2px;
+}
+
+.organise-option-btn .btn-desc {
+    font-size: 10.5px;
+    color: #8e8e93;
+}
+
+.organise-cancel-btn {
+    background: transparent;
+    border: none;
+    color: #ff453a;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    padding: 8px;
+    text-align: center;
+    transition: opacity 0.2s;
+}
+
+.organise-cancel-btn:hover {
+    opacity: 0.8;
+}
+
+/* --- Summarise Page Glass Overlay --- */
+#summary-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 110;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#summary-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#summary-overlay .organise-card {
+    max-width: 100%;
+    width: 550px;
+    flex: 1;
+    min-height: 0;
+}
+
+.summary-text {
+    font-size: 13px;
+    color: #f2f2f7;
+    line-height: 1.6;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    margin: 5px 0;
+    padding: 14px 0px;
+    white-space: pre-wrap;
+    box-sizing: border-box;
+
+    /* Soft fade - much gentler now */
+    -webkit-mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 12px,
+            black calc(100% - 12px),
+            transparent 100%);
+    mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 12px,
+            black calc(100% - 12px),
+            transparent 100%);
+}
+
+/* For WebKit browsers (Chrome, Edge, etc.) */
+.summary-text::-webkit-scrollbar {
+    width: 6px;
+}
+
+.summary-text::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.25);
+    border-radius: 20px;
+}
+
+/* --- Floating Summary Buttons --- */
+.summary-actions {
+    display: flex;
+    gap: 12px;
+    /* Spaces the buttons apart horizontally */
+    margin-top: 8px;
+    /* Adds the vertical gap between the card and the buttons */
+    transform: scale(0.95);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#summary-overlay.active .summary-actions,
+#collections-view-overlay.active .summary-actions {
+    transform: scale(1);
+}
+
+.summary-floating-btn {
+    /* Premium Glassmorphism matching the organise-card */
+    background: rgba(30, 30, 32, 0.85);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(30px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+
+    border-radius: 12px;
+    padding: 10px 18px;
+    color: #f2f2f7;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.summary-floating-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+}
+
+.summary-floating-btn:active {
+    transform: scale(0.96);
+}
+
+/* Subtle emphasis for the primary action */
+.summary-floating-btn.highlight {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    font-weight: 600;
+}
+
+.summary-floating-btn.highlight:hover {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+/* --- Find More Like This Glass Overlay --- */
+/* Same shell as #summary-overlay; body is a scrollable link list instead
+   of plain text, reusing .collection-view-item's card language. */
+#find-more-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 110;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#find-more-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#find-more-overlay .organise-card {
+    max-width: 100%;
+    width: 550px;
+    max-height: 85vh;
+    flex: 1;
+    min-height: 0;
+}
+
+#find-more-overlay.active .organise-card {
+    transform: scale(1);
+}
+
+.find-more-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    margin: 4px -6px;
+    padding: 14px 2px;
+    box-sizing: border-box;
+
+    -webkit-mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 12px,
+            black calc(100% - 12px),
+            transparent 100%);
+    mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 12px,
+            black calc(100% - 12px),
+            transparent 100%);
+}
+
+/* Individual related-link card — same interactive feel as .collection-view-item,
+   but opens the URL in a new tab on click instead of drilling into a sub-view. */
+.link-result-item {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 14px;
+    border-radius: 12px;
+    position: relative;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #f2f2f7;
+    font-size: 13px;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+    animation: fluidPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Room on the right for the hover '+' button so the title/url text
+   doesn't run underneath it. */
+.link-result-item .link-result-title,
+.link-result-item .link-result-url,
+.link-result-item .link-result-reason {
+    padding-right: 30px;
+    box-sizing: border-box;
+}
+
+/* Hover '+' — "add to a reading list group". Same size/position/reveal
+   language as .item-delete-btn, but a neutral accent instead of red
+   since this adds rather than destroys. */
+.link-result-add-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #f2f2f7;
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.link-result-add-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-50%) scale(1.05);
+}
+
+.link-result-add-btn:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+.link-result-item:hover .link-result-add-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.link-result-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-1px);
+}
+
+.link-result-item:active {
+    transform: scale(0.98);
+}
+
+.link-result-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #f2f2f7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.link-result-url {
+    font-size: 10.5px;
+    color: #8e8e93;
+    margin-top: 3px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.link-result-reason {
+    font-size: 12px;
+    color: #a1a1aa;
+    margin-top: 12px;
+    line-height: 1.5;
+}
+
+.find-more-empty {
+    font-size: 12px;
+    color: #8e8e93;
+    text-align: center;
+    padding: 30px 10px;
+    line-height: 1.6;
+}
+
+/* --- Add to Collections Picker Overlay --- */
+#collections-picker-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 110;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#collections-picker-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.collections-picker-card {
+    max-width: 340px;
+    max-height: 70vh;
+    transform: scale(0.95);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#collections-picker-overlay.active .collections-picker-card {
+    transform: scale(1);
+}
+
+/* Snippet preview — reminds the user what they're filing away */
+.collections-picker-preview {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #a1a1aa;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 8px 10px;
+    max-height: 64px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.collections-picker-input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(20px);
+    color: #f2f2f7;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.collections-picker-input::placeholder {
+    color: rgba(255, 255, 255, 0.35);
+}
+
+.collections-picker-input:focus {
+    border-color: rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* --- Collections Picker List - Soft Fade --- */
+.collections-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 220px;
+    overflow-y: auto;
+    margin: -2px 0;
+    padding: 8px 0;
+    box-sizing: border-box;
+
+    /* Soft fade at top & bottom */
+    -webkit-mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 6%,
+            black 94%,
+            transparent 100%);
+    mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 6%,
+            black 94%,
+            transparent 100%);
+}
+
+.collections-picker-empty {
+    font-size: 12px;
+    color: #8e8e93;
+    text-align: center;
+    padding: 14px 4px 6px;
+}
+
+/* Individual collection row — mirrors .qa-item's hover/press language */
+.collection-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 9px 10px;
+    border-radius: 9px;
+    background: transparent;
+    border: none;
+    color: #f2f2f7;
+    font-size: 12.5px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, padding-left 0.15s ease;
+    width: 100%;
+}
+
+.collection-picker-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    padding-left: 13px;
+}
+
+.collection-picker-item:active {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.collection-picker-item .qa-icon {
+    opacity: 0.75;
+}
+
+.collection-picker-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.collection-picker-count {
+    font-size: 10.5px;
+    color: #8e8e93;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+
+/* Create-and-add action, styled like the highlighted summary button but full-width */
+.collections-create-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: #f2f2f7;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.collections-create-btn .qa-icon {
+    width: 14px;
+    height: 14px;
+    opacity: 0.9;
+}
+
+.collections-create-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+    transform: translateY(-1px);
+}
+
+.collections-create-btn:active {
+    transform: scale(0.98);
+}
+
+.collections-create-btn.hidden {
+    display: none;
+}
+
+.collections-picker-cancel {
+    transform: scale(0.95);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#collections-picker-overlay.active .collections-picker-cancel {
+    transform: scale(1);
+}
+
+/* --- Saved Collections View Overlay --- */
+#collections-view-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 120;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#collections-view-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#collections-view-overlay .organise-card {
+    max-width: 100%;
+    width: 550px;
+    max-height: 85vh;
+}
+
+/* --- Saved Collections / Snippets View List - Soft Fade --- */
+.collections-view-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+    margin: 4px -6px;
+    padding: 14px 2px;
+    box-sizing: border-box;
+
+    /* Soft fade at top & bottom */
+    -webkit-mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 6%,
+            black 94%,
+            transparent 100%);
+    mask-image:
+        linear-gradient(to bottom,
+            transparent 0%,
+            black 6%,
+            black 94%,
+            transparent 100%);
+}
+
+/* Reusing the premium interactive feel of the picker items */
+.collection-view-item,
+.snippet-view-item {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 14px;
+    border-radius: 12px;
+    position: relative;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #f2f2f7;
+    font-size: 13px;
+    text-align: left;
+    transition: background 0.15s ease, transform 0.1s ease;
+
+    animation: fluidPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fluidPopIn {
+    0% {
+        opacity: 0;
+        transform: translateY(6px) scale(0.98);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.collection-view-item {
+    cursor: pointer;
+}
+
+.collection-view-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-1px);
+}
+
+.collection-view-item:active {
+    transform: scale(0.98);
+}
+
+.snippet-view-item {
+    cursor: default;
+    background: rgba(20, 20, 22, 0.5);
+    /* Slightly darker to denote read-only snippet */
+}
+
+.snippet-text {
+    font-size: 12px;
+    color: #a1a1aa;
+    margin-top: 6px;
+    white-space: pre-wrap;
+    line-height: 1.5;
+}
+
+/* --- Item Delete Button (Collections & Snippets) --- */
+.item-delete-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 69, 58, 0.15);
+    border: 1px solid rgba(255, 69, 58, 0.3);
+    color: #ff453a;
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.item-delete-btn:hover {
+    background: rgba(255, 69, 58, 0.25);
+    transform: translateY(-50%) scale(1.05);
+}
+
+.item-delete-btn:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+/* Reveal on card hover */
+.collection-view-item:hover .item-delete-btn,
+.snippet-view-item:hover .item-delete-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* --- Add to Reading List Group Picker Overlay --- */
+/* Same shape as #collections-picker-overlay, at a higher z-index because
+   it can be launched from a card inside #find-more-overlay (z-index 110)
+   and needs to sit above it rather than behind it. */
+#reading-list-picker-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 130;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#reading-list-picker-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.reading-list-picker-card {
+    max-width: 340px;
+    max-height: 70vh;
+    transform: scale(0.95);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#reading-list-picker-overlay.active .reading-list-picker-card {
+    transform: scale(1);
+}
+
+/* Link preview — reminds the user what they're filing away. Two lines
+   (title + url) rather than the free-text preview Collections uses,
+   since what's being saved here is a link card, not a text snippet. */
+.reading-list-picker-preview {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #a1a1aa;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 8px 10px;
+    max-height: 64px;
+    overflow-y: auto;
+}
+
+.reading-list-picker-preview-title {
+    font-weight: 600;
+    color: #f2f2f7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --- Reading List Groups View Overlay --- */
+/* Mirrors #collections-view-overlay exactly — group list (Scene A) that
+   drills into a single group's saved links (Scene B) with a Back button. */
+#reading-list-groups-view-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 120;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#reading-list-groups-view-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#reading-list-groups-view-overlay .organise-card {
+    max-width: 100%;
+    width: 550px;
+    max-height: 85vh;
+}
+
+/* Read/unread toggle on a saved-link row inside a group — a tick mark
+   sitting in the outer slot (right:12px), same position .item-delete-btn
+   normally occupies on its own. Unread state is subtle and only appears
+   on hover (so an unread list doesn't look cluttered), but once marked
+   read it stays visibly green at all times, not just while hovering —
+   that's the whole point of the tick, it's a persistent status
+   indicator that should read at a glance without needing to hover. The
+   delete button sits in the inner slot (right:48px) here since the tick
+   took its usual spot, and stays hover-only just like every other
+   delete button in this UI (collections, snippets) — never shown
+   alongside a checked tick by default. */
+.item-read-toggle-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #f2f2f7;
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.item-read-toggle-btn.is-read {
+    background: rgba(48, 209, 88, 0.15);
+    border-color: rgba(48, 209, 88, 0.3);
+    color: #30d158;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.item-read-toggle-btn:hover {
+    transform: translateY(-50%) scale(1.05);
+}
+
+.item-read-toggle-btn:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+.reading-list-item-view:hover .item-read-toggle-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Inner slot for the reading-list row's delete button — same hover-only
+   reveal as .item-delete-btn's base rule (no always-visible override
+   here), matching the Saved Collections / snippet rows exactly. */
+.reading-list-item-view .item-delete-btn {
+    right: 48px;
+}
+
+.reading-list-item-view:hover .item-delete-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.reading-list-item-view.is-read .link-result-title {
+    color: #8e8e93;
+    text-decoration: line-through;
+    text-decoration-color: rgba(142, 142, 147, 0.5);
+}
+
+/* Two buttons (read-toggle + delete) sit on the right of a reading-list
+   row instead of the single '+' a find-more card gets, so it needs more
+   clearance than the base .link-result-item rule provides. */
+.reading-list-item-view .link-result-title,
+.reading-list-item-view .link-result-url,
+.reading-list-item-view .link-result-reason {
+    padding-right: 66px;
+}

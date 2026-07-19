@@ -1,0 +1,861 @@
+/* --- Messages Thread (Editorial Timeline) --- */
+#messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 10px 96px 10px;
+    /* Generous breathing room; extra bottom padding keeps the last
+         message clear of the floating input row/send button. Sized a
+         bit past the input row's own height since the context shelf
+         (also floating, in #bottom-dock) can stack above it and grow
+         up to its own max-height when attachments are present. */
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    /* Distinct vertical separation between turns */
+    position: relative;
+    z-index: 2;
+}
+
+#messages::-webkit-scrollbar {
+    width: 7px;
+}
+
+#messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#messages::-webkit-scrollbar-thumb {
+    background: rgba(120, 120, 128, 0.4);
+    border-radius: 4px;
+}
+
+#messages::-webkit-scrollbar-thumb:hover {
+    background: rgba(120, 120, 128, 0.6);
+}
+
+/* --- Context Trail (shows what was attached to a sent message) --- */
+.msg-context-trail {
+    align-self: flex-end;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 5px;
+    max-width: 90%;
+    margin-bottom: -2px;
+    position: relative;
+    z-index: 2;
+    opacity: 0;
+    animation: timelineInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.context-trail-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 10.5px;
+    font-weight: 500;
+    color: #a1a1aa;
+    max-width: 220px;
+    cursor: default;
+    transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+}
+
+.context-trail-chip:hover {
+    border-color: rgba(255, 255, 255, 0.28);
+    color: #d8d8de;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.context-trail-icon {
+    flex-shrink: 0;
+    width: 11px;
+    height: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.8;
+}
+
+.context-trail-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.context-trail-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --- Base Timeline Typography --- */
+.msg {
+    max-width: 100%;
+    font-size: 12px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    position: relative;
+    z-index: 2;
+}
+
+/* --- User Input (Right Aligned, Muted) --- */
+.msg.user {
+    align-self: flex-end;
+    text-align: right;
+    /* Aligns the text itself to the right */
+    background: transparent;
+    /* No bubble */
+    color: #a1a1aa;
+    /* Elegant muted gray */
+    padding: 0 10px 0 0;
+    /* Padding on the right */
+    border-right: 2px solid rgba(255, 255, 255, 0.15);
+    /* Subtle anchor line */
+    box-shadow: none;
+    border-radius: 0;
+
+    /* Cinematic horizontal slide-in */
+    opacity: 0;
+    transform-origin: center right;
+    animation: timelineInRight 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* --- AI Response (Left Aligned, Glowing Accent) --- */
+.msg.ai {
+    align-self: flex-start;
+    text-align: left;
+    /* Soft gradient that fades into transparency, creating a glow without a box */
+    /* background: linear-gradient(90deg, rgba(10, 10, 10, 0.9) 0%, transparent 100%); */
+    color: #f2f2f7;
+    /* High contrast text */
+    padding: 6px 10px 6px 10px;
+    /* Padding on the left */
+    border-left: 2px solid #ffffff41;
+    /* Sicily Navigator purple accent */
+    box-shadow: none;
+    border-radius: 0;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+
+    /* Cinematic horizontal slide-in */
+    opacity: 0;
+    transform-origin: center left;
+    animation: timelineInLeft 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* --- System/Status Messages --- */
+.msg.system {
+    align-self: center;
+    background: transparent;
+    color: rgba(230, 185, 90, 0.6);
+    border: none;
+    padding: 0;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    /* highly modern label look */
+    text-align: center;
+}
+
+/* --- Timeline Entry Animations --- */
+@keyframes timelineInRight {
+    from {
+        opacity: 0;
+        transform: translateX(12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes timelineInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* --- Action Row & Inputs --- */
+#bottom-dock {
+    /* Floats the whole input cluster (context shelf + input row) over
+         the messages list instead of reserving its own flex row, so the
+         text box and send button read as floating objects while staying
+         anchored to the same bottom position they always occupied. */
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+}
+
+#input-row {
+    display: flex;
+    padding: 8px 12px 14px 12px;
+    gap: 8px;
+    align-items: center;
+    background: transparent;
+}
+
+#input-box {
+    flex: 1;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.9);
+    /* Solid-ish so it reads as its own floating pill against the
+         busy messages list scrolling underneath it */
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+    color: #f2f2f7;
+    font-size: 13.5px;
+    outline: none;
+    transition: border-color 0.25s ease-out, box-shadow 0.25s ease-out;
+    resize: none;
+    line-height: 1.5;
+}
+
+#input-box:focus {
+    border-color: rgba(255, 255, 255, 0.35);
+    box-shadow: 0 0 14px rgba(255, 255, 255, 0.22);
+}
+
+/* Send button — hidden by default, emerges from input on proximity */
+#send-btn {
+    padding: 9px 15px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.06);
+    color: #f2f2f7;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+
+    /* Hidden state: collapsed into the input's right edge */
+    opacity: 0;
+    transform: scaleX(0.3) scaleY(0.75) translateX(-10px);
+    transform-origin: left center;
+    pointer-events: none;
+    max-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    overflow: hidden;
+    white-space: nowrap;
+
+    transition:
+        opacity 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.42s cubic-bezier(0.34, 1.56, 0.64, 1),
+        max-width 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+        padding 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+        background-color 0.15s;
+}
+
+/* Revealed state: full button, spring-animated out */
+#send-btn.revealed {
+    opacity: 1;
+    transform: scaleX(1) scaleY(1) translateX(0);
+    pointer-events: auto;
+    max-width: 52px;
+    padding-left: 11px;
+    padding-right: 11px;
+}
+
+#send-btn.revealed:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.28);
+}
+
+#send-btn.revealed:active:not(:disabled) {
+    transform: scaleX(0.96) scaleY(0.96);
+}
+
+#send-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+@keyframes sendSpin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* --- "Using: tab" indicator bar (born out of the input box) --- */
+.using-tab-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 12px;
+    padding: 0 10px;
+    height: 0;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.055);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 0 1px rgba(255, 255, 255, 0.12);
+
+    overflow: hidden;
+    opacity: 0;
+    transform: scaleY(0.2) translateY(6px);
+    transform-origin: bottom center;
+    pointer-events: none;
+
+    transition:
+        height 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+        opacity 0.32s ease,
+        transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+        margin-top 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+        border-color 0.2s ease;
+}
+
+.using-tab-bar--visible {
+    height: 34px;
+    margin-top: 8px;
+    opacity: 1;
+    transform: scaleY(1) translateY(0);
+    pointer-events: auto;
+}
+
+/* "Born out of the text box" entrance: an emphasized spring pop the
+     first time (or on every replace) that reads as the bar being
+     generated from the input row right beneath it, rather than a
+     generic fade. Re-triggered on every new/replaced mention. */
+@keyframes usingTabBorn {
+    0% {
+        height: 0;
+        opacity: 0;
+        transform: scaleY(0.15) translateY(10px);
+        border-color: rgba(255, 255, 255, 0.06);
+    }
+
+    45% {
+        height: 38px;
+        opacity: 1;
+        transform: scaleY(1.08) translateY(-1px);
+        border-color: rgba(255, 255, 255, 0.32);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 0 20px rgba(255, 255, 255, 0.12);
+    }
+
+    75% {
+        height: 32px;
+        transform: scaleY(0.97) translateY(0.5px);
+    }
+
+    100% {
+        height: 34px;
+        opacity: 1;
+        transform: scaleY(1) translateY(0);
+        border-color: rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3), inset 0 0 1px rgba(255, 255, 255, 0.12);
+    }
+}
+
+.using-tab-bar--born {
+    animation: usingTabBorn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.using-tab-bar--leaving {
+    height: 0 !important;
+    margin-top: 0 !important;
+    opacity: 0 !important;
+    transform: scaleY(0.2) translateY(6px) !important;
+    pointer-events: none;
+}
+
+.using-tab-bar {
+    cursor: pointer;
+}
+
+.using-tab-icon {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #c7c7cc;
+    opacity: 0.9;
+}
+
+.using-tab-icon svg,
+.using-tab-icon img {
+    width: 100%;
+    height: 100%;
+    border-radius: 3px;
+    object-fit: contain;
+}
+
+/* Multi-tab state: up to 3 favicons overlapping like a hand of cards */
+.using-tab-icon.using-tab-icon--stack {
+    width: auto;
+    height: 15px;
+    flex-direction: row;
+    justify-content: flex-start;
+    padding-right: 8px;
+    /* room for the overlapped icons to breathe */
+}
+
+.using-tab-icon-slot {
+    width: 15px;
+    height: 15px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(20, 20, 22, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.4);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.using-tab-icon-slot:not(:first-child) {
+    margin-left: -6px;
+}
+
+.using-tab-icon-slot svg,
+.using-tab-icon-slot img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.using-tab-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 11.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.using-tab-prefix {
+    color: #8e8e93;
+    font-weight: 500;
+}
+
+.using-tab-name {
+    color: #f2f2f7;
+    font-weight: 600;
+}
+
+.using-tab-close {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 13px;
+    line-height: 1;
+    transition: color 0.15s, background-color 0.15s, transform 0.15s;
+}
+
+.using-tab-close:hover {
+    color: #ff453a;
+    background: rgba(255, 69, 58, 0.12);
+    transform: scale(1.15);
+}
+
+.using-tab-close:active {
+    transform: scale(0.9);
+}
+
+/* --- @-mention tab dropdown --- */
+.mention-dropdown {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 100%;
+    margin-bottom: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(20, 20, 22, 0.82);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    box-shadow:
+        0 10px 30px rgba(0, 0, 0, 0.45),
+        inset 0 0 1px rgba(255, 255, 255, 0.14);
+
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+    transform-origin: bottom center;
+    pointer-events: none;
+    z-index: 5;
+
+    transition:
+        opacity 0.22s ease,
+        transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mention-dropdown--visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+}
+
+.mention-dropdown::-webkit-scrollbar {
+    width: 6px;
+}
+
+.mention-dropdown::-webkit-scrollbar-thumb {
+    background: rgba(120, 120, 128, 0.4);
+    border-radius: 4px;
+}
+
+.mention-dropdown-empty {
+    padding: 12px;
+    font-size: 12px;
+    color: #8e8e93;
+    text-align: center;
+}
+
+.mention-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    transition: background-color 0.12s ease;
+}
+
+.mention-dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.mention-dropdown-item:hover,
+.mention-dropdown-item.highlighted {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mention-dropdown-icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #c7c7cc;
+    opacity: 0.9;
+}
+
+.mention-dropdown-icon svg,
+.mention-dropdown-icon img {
+    width: 100%;
+    height: 100%;
+    border-radius: 3px;
+    object-fit: contain;
+}
+
+.mention-dropdown-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.mention-dropdown-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: #f2f2f7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- Manage dropdown (opened by clicking the "Using..." bar) ---
+     Shows only already-added items with a remove (×) control. Rows are
+     plain/non-interactive; only .mention-manage-remove responds to clicks. */
+.mention-manage-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: default;
+}
+
+.mention-manage-item:last-child {
+    border-bottom: none;
+}
+
+.mention-manage-remove {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.45);
+    font-size: 14px;
+    line-height: 1;
+    transition: color 0.15s, background-color 0.15s, transform 0.15s;
+}
+
+.mention-manage-remove:hover {
+    color: #ff453a;
+    background: rgba(255, 69, 58, 0.12);
+    transform: scale(1.15);
+}
+
+.mention-manage-remove:active {
+    transform: scale(0.9);
+}
+
+/* --- The Glassy Context Shelf (Gemini-style attachment tray) --- */
+#context-shelf {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px 0 12px;
+    background: transparent;
+    max-height: 220px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    position: relative;
+    scrollbar-width: none;
+    /* Firefox */
+    -ms-overflow-style: none;
+    /* IE and Edge */
+}
+
+#context-shelf::-webkit-scrollbar {
+    display: none;
+    /* Chrome, Safari, Opera */
+}
+
+#context-shelf.hidden {
+    display: none;
+}
+
+/* --- Card (collapsed = Gemini pill, expanded = detail card) --- */
+.context-chip {
+    --chip-accent: #c7c7cc;
+    display: flex;
+    flex-direction: column;
+    max-width: 220px;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 14px;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.25),
+        inset 0 0 1px rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+    overflow: hidden;
+    transform-origin: bottom center;
+
+    /* Bouncy pop-in entrance, Gemini-esque */
+    animation: chipPopIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+
+    transition:
+        transform 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+        box-shadow 0.28s cubic-bezier(0.34, 1.56, 0.64, 1),
+        border-color 0.2s ease,
+        max-width 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes chipPopIn {
+    0% {
+        opacity: 0;
+        transform: translateY(10px) scale(0.85);
+    }
+
+    60% {
+        opacity: 1;
+        transform: translateY(-2px) scale(1.03);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Hover: lift up a little, glow */
+.context-chip:hover {
+    transform: translateY(-3px);
+    border-color: rgba(255, 255, 255, 0.32);
+    box-shadow:
+        0 8px 18px rgba(0, 0, 0, 0.35),
+        0 0 18px rgba(255, 255, 255, 0.1),
+        inset 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.context-chip:active {
+    transform: translateY(-1px) scale(0.98);
+}
+
+/* Expanded state: grow into a full detail card */
+.context-chip.expanded {
+    max-width: 320px;
+    border-color: rgba(255, 255, 255, 0.32);
+    box-shadow:
+        0 10px 24px rgba(0, 0, 0, 0.4),
+        0 0 22px rgba(255, 255, 255, 0.08),
+        inset 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+.context-chip.expanded:hover {
+    transform: translateY(-2px);
+}
+
+/* --- Header row (always visible): icon + label + close --- */
+.context-chip-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 6px 6px 9px;
+}
+
+.context-chip-icon {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--chip-accent);
+    opacity: 0.9;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.context-chip-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.context-chip.expanded .context-chip-icon {
+    transform: rotate(-8deg) scale(1.05);
+}
+
+.context-chip-label {
+    flex: 1;
+    min-width: 0;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: #f2f2f7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.context-chip-caret {
+    flex-shrink: 0;
+    width: 9px;
+    height: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.45);
+    transition: transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.context-chip-caret svg {
+    width: 100%;
+    height: 100%;
+}
+
+.context-chip.expanded .context-chip-caret {
+    transform: rotate(180deg);
+    color: var(--chip-accent);
+}
+
+.context-close {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 13px;
+    line-height: 1;
+    transition: color 0.15s, background-color 0.15s, transform 0.15s;
+}
+
+.context-close:hover {
+    color: #ff453a;
+    background: rgba(255, 69, 58, 0.12);
+    transform: scale(1.15);
+}
+
+.context-close:active {
+    transform: scale(0.9);
+}
+
+/* --- Expandable body: full text, smooth grow --- */
+.context-chip-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition:
+        grid-template-rows 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+        opacity 0.22s ease;
+}
+
+.context-chip.expanded .context-chip-body {
+    grid-template-rows: 1fr;
+    opacity: 1;
+}
+
+.context-chip-body-inner {
+    overflow: hidden;
+    min-height: 0;
+}
+
+.context-chip-text {
+    margin: 0 9px 9px 9px;
+    padding-top: 7px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #d8d8de;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 140px;
+    overflow-y: auto;
+}
+
+.context-chip-text::-webkit-scrollbar {
+    width: 5px;
+}
+
+.context-chip-text::-webkit-scrollbar-thumb {
+    background: rgba(120, 120, 128, 0.4);
+    border-radius: 4px;
+}

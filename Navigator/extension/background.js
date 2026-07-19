@@ -1,40 +1,3 @@
-/**
- * background.js
- * -------------
- * Demo scope (no AI): one job — clean up a tab's conversation on the
- * backend the moment that tab actually closes.
- *
- * The popup talks directly to the local Python backend over WebSocket/REST
- * and reads the active tab itself via chrome.tabs — for this baby-steps
- * demo there's no need for a background-script relay for chat traffic.
- *
- * But tab-close is the one thing only the background script can reliably
- * observe (the popup isn't necessarily open when a tab closes — the user
- * could've closed the popup ages ago and then closed the tab). So that's
- * the one thing this file does: tell the backend "tab X is gone, forget
- * its conversation."
- *
- * This file also owns the "Edit with Navigator" right-click flow — a
- * second job, unrelated to the tab-chat session cleanup above:
- *   - registers the context menu item
- *   - on click, tells content_script.js (in that tab) to open the
- *     floating edit box near the current selection
- *   - relays content_script.js's edit request to the backend's
- *     POST /edit-selection and hands the result back
- *
- * That relay exists because content scripts run in the page's own
- * context and their fetches are subject to the page's CSP, which can
- * block arbitrary cross-origin requests on some sites. Extension pages
- * (background.js included) aren't subject to page CSP, so routing the
- * fetch through here is the reliable path — same reasoning as why the
- * popup already talks to the backend directly rather than through a
- * content script.
- *
- * This one-shot edit flow is intentionally NOT wired into SessionStore
- * or the tab-chat WebSocket in navigator_bridge.py — it has no
- * conversation to remember, so it doesn't touch tab_id at all.
- */
-
 const BACKEND_HOST = "localhost:8765";
 const EDIT_MENU_ID = "sicily-navigator-edit-selection";
 
@@ -65,6 +28,27 @@ chrome.runtime.onInstalled.addListener(() => {
   setupContextMenu();
 });
 
+// ── Tab-Specific Side Panel Management ────────────────────────────────
+// REMOVE or comment out the old chrome.sidePanel.setPanelBehavior block entirely.
+
+chrome.action.onClicked.addListener((tab) => {
+  if (!tab || !tab.id) return;
+
+  // 1. Configure the side panel path strictly for this tab.
+  // We do NOT use 'await' here so we don't break the synchronous execution turn.
+  chrome.sidePanel.setOptions({
+    tabId: tab.id,
+    path: "side_panel.html",
+    enabled: true
+  });
+
+  // 2. Immediately invoke open() in the exact same code block.
+  // This preserves the active user gesture token!
+  chrome.sidePanel.open({ tabId: tab.id }).catch((error) => {
+    console.error("Failed to open tab-specific side panel:", error);
+  });
+});
+
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === EDIT_MENU_ID && tab && tab.id != null) {
     chrome.tabs.sendMessage(tab.id, { type: "navigator-open-edit-box" });
@@ -80,7 +64,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     body: JSON.stringify({
       selected_text: message.selected_text,
       instruction: message.instruction,
-      action_type: message.action_type || "edit"
+      action_type: message.action_type || "edit",
+      surrounding_context: message.surrounding_context || ""
     }),
   })
     .then((res) => {

@@ -41,8 +41,11 @@ def get_cost(model_name: str, input_tokens: int, output_tokens: int, cached_inpu
 
 
 def init_db():
+    """Initialize DB and ensure all columns exist for backward compatibility."""
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+
     with sqlite3.connect(DB_PATH) as conn:
+        # Create table if it doesn't exist
         conn.execute("""
             CREATE TABLE IF NOT EXISTS token_usage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,6 +60,15 @@ def init_db():
                 message_id TEXT UNIQUE
             )
         """)
+
+        try:
+            conn.execute("ALTER TABLE token_usage ADD COLUMN cached_input_tokens INTEGER DEFAULT 0")
+            print("Added missing column: cached_input_tokens")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                print(f"Warning adding column: {e}")
+        
+        conn.commit()
 
 
 def record_usage(dimension: str, session_id: str, model_name: str, 
