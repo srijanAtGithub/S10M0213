@@ -38,7 +38,7 @@ chrome.action.onClicked.addListener((tab) => {
   // We do NOT use 'await' here so we don't break the synchronous execution turn.
   chrome.sidePanel.setOptions({
     tabId: tab.id,
-    path: "popup.html",
+    path: "side_panel.html",
     enabled: true
   });
 

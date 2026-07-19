@@ -75,6 +75,8 @@ async def chat_node(state: NavigatorState) -> dict:
             content=_build_turn_text(original_text, snippets)
         )
 
+    num_sources = len(snippets)
+
     system_prompt = SystemMessage(
         content=(
             "You are a smart, premium, and highly capable assistant embedded in a browser side panel.\n\n"
@@ -90,14 +92,36 @@ async def chat_node(state: NavigatorState) -> dict:
             "collections at once. Each source is individually labeled, either "
             "'Tab: \"<page title>\"' or 'Collection: <collection name>', and "
             "when there is more than one attached item they are also numbered "
-            "like '[1]', '[2]', etc. Treat each labeled block as coming from "
-            "that distinct source. If the user asks something like 'where is "
-            "X mentioned' or 'which tab talks about Y' or 'is this in the "
-            "collection too', look across the labeled blocks and answer by "
-            "naming the specific tab title or collection name the relevant "
-            "content came from, rather than treating all attached content as "
-            "one undifferentiated pile.\n\n"
-            "Provide helpful, concise, and insightful answers as plain text "
+            "like '[1]', '[2]', etc.\n\n"
+            "When more than one source is attached, treat each as its own "
+            "independent, unrelated corpus — do not assume they relate to "
+            "each other, and never blend their content into a single "
+            "narrative. Two attached collections are two separate saved "
+            "notebooks the user happens to be asking about at the same "
+            "time, not two parts of one document.\n\n"
+            "How to answer depends on what the user actually asked:\n"
+            "- If they ask something open-ended with no other subject (e.g. "
+            "'what is this', 'summarise this'), do NOT just re-list or "
+            "transcribe each source's contents back to them one by one — "
+            "that's not an answer, it's a dump. Instead, briefly name what "
+            "each source IS (by its label) in one short line each, then give "
+            "a real synthesized takeaway: what each one is actually about/for "
+            "and, if there's nothing connecting them, say plainly that they "
+            "look unrelated instead of forcing a link. Keep it tight — a "
+            "sentence or two per source, not an exhaustive re-listing of every "
+            "item inside it.\n"
+            "- If the user's question specifically needs detail from one or "
+            "more sources (e.g. 'where is X mentioned', 'which tab talks "
+            "about Y', 'list the items in the recipes collection'), then go "
+            "into that specific source in the detail the question calls for, "
+            "and name the specific tab title or collection name it came "
+            "from.\n\n"
+            + (
+                f"For this message, {num_sources} separate sources are attached — keep "
+                f"all {num_sources} clearly distinguished by their labels in your answer.\n\n"
+                if num_sources > 1 else ""
+            )
+            + "Provide helpful, concise, and insightful answers as plain text "
             "(no markdown formatting)."
         )
     )
