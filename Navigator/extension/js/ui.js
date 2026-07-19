@@ -1,0 +1,119 @@
+import { makeContextLabel } from "./features.js";
+
+export const appWrap = document.getElementById("app-wrap");
+export const messagesEl = document.getElementById("messages");
+export const sendBtn = document.getElementById("send-btn");
+export const statusDot = document.getElementById("status-dot");
+export const disconnectedScreen = document.getElementById("disconnected-screen");
+
+export function addMessage(text, role) {
+  const el = document.createElement("div");
+  el.className = `msg ${role}`;
+  el.textContent = text;
+  messagesEl.appendChild(el);
+  requestAnimationFrame(() => {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+}
+
+export function addContextTrail(snippets) {
+  if (!snippets || snippets.length === 0) return;
+  const trail = document.createElement("div");
+  trail.className = "msg-context-trail";
+  snippets.forEach((text) => {
+    const chip = document.createElement("div");
+    chip.className = "context-trail-chip";
+    chip.title = text;
+    const icon = document.createElement("span");
+    icon.className = "context-trail-icon";
+    icon.innerHTML = `<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4 3.5h9l3 3v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-12a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M13 3.5v3h3" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M6.5 10.5h7M6.5 13h7M6.5 8h3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </svg>`;
+    const label = document.createElement("span");
+    label.className = "context-trail-label";
+    label.textContent = makeContextLabel(text);
+    chip.appendChild(icon);
+    chip.appendChild(label);
+    trail.appendChild(chip);
+  });
+  messagesEl.appendChild(trail);
+  requestAnimationFrame(() => {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+}
+
+export function clearMessagesUI() {
+  messagesEl.innerHTML = "";
+}
+
+export function setStatus(state) {
+  statusDot.className = state === "connected"
+    ? "connected"
+    : state === "disconnected"
+      ? "disconnected"
+      : "";
+  if (state === "connected") {
+    showOnline();
+  } else if (state === "disconnected") {
+    showOffline();
+  }
+}
+
+export function showOffline() {
+  appWrap.classList.add("offline");
+  disconnectedScreen.classList.add("visible");
+}
+
+export function showOnline() {
+  appWrap.classList.remove("offline");
+  disconnectedScreen.classList.remove("visible");
+  disconnectedScreen.classList.remove("retrying");
+}
+
+export function setSending(isSending) {
+  sendBtn.disabled = isSending;
+  const icon = document.getElementById("send-icon");
+  const spinner = document.getElementById("send-spinner");
+  if (icon) icon.style.display = isSending ? "none" : "";
+  if (spinner) spinner.style.display = isSending ? "inline-block" : "none";
+  if (isSending) {
+    appWrap.classList.add("busy");
+  } else {
+    appWrap.classList.remove("busy");
+  }
+}
+
+export const inputRow = document.getElementById("input-row");
+export const PROXIMITY_THRESHOLD = 90;
+let sendBtnRevealTimer = null;
+
+export function revealSendBtn() {
+  clearTimeout(sendBtnRevealTimer);
+  sendBtn.classList.add("revealed");
+}
+
+export function hideSendBtn(delay = 400) {
+  clearTimeout(sendBtnRevealTimer);
+  sendBtnRevealTimer = setTimeout(() => {
+    if (!sendBtn.matches(":hover")) {
+      sendBtn.classList.remove("revealed");
+    }
+  }, delay);
+}
+
+sendBtn.addEventListener("mouseenter", revealSendBtn);
+sendBtn.addEventListener("mouseleave", () => hideSendBtn(300));
+
+document.addEventListener("mousemove", (e) => {
+  const rect = inputRow.getBoundingClientRect();
+  const dx = Math.max(rect.left - e.clientX, 0, e.clientX - rect.right);
+  const dy = Math.max(rect.top - e.clientY, 0, e.clientY - rect.bottom);
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist <= PROXIMITY_THRESHOLD) {
+    revealSendBtn();
+  } else {
+    hideSendBtn(300);
+  }
+});

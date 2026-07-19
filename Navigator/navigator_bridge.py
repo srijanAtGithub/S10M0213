@@ -1,50 +1,26 @@
 """
 navigator_bridge.py
 ------------------
-Standalone FastAPI server exposing:
-  - REST endpoints for tab-scoped session management (view / clear history)
-  - One WebSocket endpoint per tab for chat turns
+FastAPI server serving as the browser extension bridge.
 
-Demo scope (no AI):
-  - No LLM, no tools, no MCP, no auth, no API key check yet.
-  - Conversation state is held in-memory, one list of LangChain messages
-    per browser tab (keyed by tab_id, sent by the extension).
-  - Runs the trivial LangGraph graph from navigator_graph.py on every turn,
-    feeding it the tab's full message history so far (not just the latest
-    message), and stores the graph's updated history back for next time.
+Features:
+  - Chat (WebSocket): Tab-scoped conversation state persisted to a local
+    SQLite database (ChatStore, ~/.sicily/Navigator/ChatsData/chats.db),
+    via LangGraph[cite: 3]. Sessions are created lazily and survive
+    backend restarts; they're cleared on tab closure or explicit user
+    request[cite: 3].
+  - Tools (REST): Stateless endpoints for /edit-selection and /organise-tabs[cite: 3].
 
-Session lifecycle (this is the piece that used to be missing):
-  - A tab's history is created lazily on its first message.
-  - It is returned to the popup on open via GET /session/{tab_id}, so
-    switching tabs and coming back restores that tab's conversation.
-  - It is wiped explicitly via DELETE /session/{tab_id} ("Clear chat" button).
-  - It is wiped automatically when the tab itself closes — background.js
-    listens for chrome.tabs.onRemoved and calls DELETE /session/{tab_id}.
-  - Nothing here survives a server restart; that's fine for this demo —
-    a real persistence layer can replace SessionStore later without
-    touching the graph or the extension's protocol.
+Design:
+  - This is a modular demo. The ChatStore and internal logic are structured 
+    for easy migration to a different persistence backend and integration 
+    with LLM configuration/ToolManagers in the future[cite: 3].
 
-This file also exposes a second, unrelated pipeline: POST /edit-selection,
-for the "Edit with Navigator" right-click-a-selection flow. That one is
-deliberately NOT part of the tab-session system above — it's stateless,
-single-shot (selected text + instruction in, edited text out), has no
-tab_id, and touches SessionStore not at all. Don't be tempted to route it
-through the WebSocket/graph machinery; it has no conversation to remember.
-
-Run it:
-    uv run uvicorn Navigator.navigator_bridge:app --reload --port 8765
-    (or: python -m uvicorn Navigator.navigator_bridge:app --reload --port 8765)
-
-This intentionally does NOT reuse configuration.py / agent.py / Cowork —
-there is no LLM to configure yet. Once the real AI is wired in, this file
-is where a real ToolManager / configuration.get_main_llm() would be added,
-following the same pattern as Cowork/cowork_session.py. SessionStore below
-is deliberately shaped so that swap is easy: it's already just "tab_id ->
-list of LangChain messages", which is what a checkpointer would want too.
+Run:
+  uv run uvicorn Navigator.navigator_bridge:app --reload --port 8765[cite: 3]
 """
 
-from pydantic import BaseModel, Field
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 import configuration
 configuration.load_config()
@@ -52,10 +28,38 @@ configuration.load_config()
 import structlog
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from pydantic import BaseModel
 
-from Navigator.navigator_graph import build_navigator_graph
+from Navigator.Task_Files.Chat_Section import build_navigator_graph
+from Navigator.Task_Files.ChatStore import ChatStore
+
+from Navigator.Task_Files.Organise_Tabs import OrganiseTabsRequest, process_organise_tabs
+from Navigator.Task_Files.Edit_Selection import EditSelectionRequest, EditSelectionResponse, process_edit_selection
+from Navigator.Task_Files.Summarise_Page import SummarisePageRequest, SummarisePageResponse, process_summarise_page
+from Navigator.Task_Files.Find_More_Like_This import FindMoreLikeThisRequest, FindMoreLikeThisResponse, process_find_more_like_this
+from Navigator.Task_Files.Collections import (
+    ListCollectionsResponse,
+    AddSnippetRequest,
+    AddSnippetResponse,
+    CollectionDetailResponse,
+    process_list_collections,
+    process_add_snippet,
+    process_get_collection,
+    process_delete_collection,
+    process_delete_snippet,
+)
+from Navigator.Task_Files.Reading_List_Groups import (
+    ListReadingListGroupsResponse,
+    ReadingListGroupDetailResponse,
+    AddReadingListItemRequest,
+    AddReadingListItemResponse,
+    SetReadRequest,
+    process_list_reading_list_groups,
+    process_get_reading_list_group,
+    process_add_reading_list_item,
+    process_set_read,
+    process_delete_reading_list_group,
+    process_delete_reading_list_item,
+)
 
 log = structlog.get_logger()
 
@@ -73,57 +77,110 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.post("/organise-tabs")
+async def organise_tabs(req: OrganiseTabsRequest):
+    return await process_organise_tabs(req.tabs)
+
+@app.post("/edit-selection", response_model=EditSelectionResponse)
+async def edit_selection(req: EditSelectionRequest):
+    return await process_edit_selection(req)
+
+@app.post("/summarise-page", response_model=SummarisePageResponse)
+async def summarise_page(req: SummarisePageRequest):
+    return await process_summarise_page(req)
+
+@app.post("/find-more-like-this", response_model=FindMoreLikeThisResponse)
+async def find_more_like_this(req: FindMoreLikeThisRequest):
+    return await process_find_more_like_this(req)
+
+# ── Saved Collections ────────────────────────────────────────────────
+# Drag-and-drop-to-collections feature: dropping a text snippet on the
+# side panel's Collections zone opens a floating picker (existing
+# collections, filterable, plus "create and add") which hits these
+# routes. See Collections.py for the SQLite-backed storage.
+
+@app.get("/collections", response_model=ListCollectionsResponse)
+async def list_collections():
+    return await process_list_collections()
+
+@app.get("/collections/{collection_id}", response_model=CollectionDetailResponse)
+async def get_collection(collection_id: int):
+    try:
+        return await process_get_collection(collection_id)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.delete("/collections/{collection_id}")
+async def delete_collection(collection_id: int):
+    return await process_delete_collection(collection_id)
+
+@app.delete("/collections/snippets/{snippet_id}")
+async def delete_snippet(snippet_id: int):
+    return await process_delete_snippet(snippet_id)
+
+@app.post("/collections/add-snippet", response_model=AddSnippetResponse)
+async def add_snippet(req: AddSnippetRequest):
+    try:
+        return await process_add_snippet(req)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
+
+# ── Reading List Groups ──────────────────────────────────────────────
+# The '+' hovering over a link-bearing card (Find More Like This results
+# today) opens a floating picker — existing reading-list groups,
+# filterable, plus "create and add" — mirroring the Collections picker
+# above exactly. See Reading_List_Groups.py for the SQLite-backed storage.
+
+@app.get("/reading-list-groups", response_model=ListReadingListGroupsResponse)
+async def list_reading_list_groups():
+    return await process_list_reading_list_groups()
+
+@app.get("/reading-list-groups/{group_id}", response_model=ReadingListGroupDetailResponse)
+async def get_reading_list_group(group_id: int):
+    try:
+        return await process_get_reading_list_group(group_id)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.delete("/reading-list-groups/{group_id}")
+async def delete_reading_list_group(group_id: int):
+    return await process_delete_reading_list_group(group_id)
+
+@app.delete("/reading-list-groups/items/{item_id}")
+async def delete_reading_list_item(item_id: int):
+    return await process_delete_reading_list_item(item_id)
+
+@app.post("/reading-list-groups/add-item", response_model=AddReadingListItemResponse)
+async def add_reading_list_item(req: AddReadingListItemRequest):
+    try:
+        return await process_add_reading_list_item(req)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.patch("/reading-list-groups/items/{item_id}/read")
+async def set_reading_list_item_read(item_id: int, req: SetReadRequest):
+    try:
+        return await process_set_read(item_id, req.is_read)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(e))
+
 # One compiled graph instance, reused for every turn on every tab.
-# It has no memory of its own — memory lives in SessionStore below and
+# It has no memory of its own — memory lives in the ChatStore below and
 # is handed to the graph fresh on each invocation as part of the state.
 graph = build_navigator_graph()
 
 
-class SessionStore:
-    """
-    In-memory, tab-scoped conversation history.
-
-    tab_id -> list[BaseMessage]
-
-    One entry per tab that has sent at least one message. Deliberately
-    dumb (no TTL, no persistence to disk) — this is exactly the amount
-    of state the demo needs, and it's isolated here so it can be swapped
-    for something real (Redis, a LangGraph checkpointer, whatever) later
-    without touching the graph or the WebSocket handler logic.
-    """
-
-    def __init__(self):
-        self._sessions: dict[str, list[BaseMessage]] = {}
-
-    def get(self, tab_id: str) -> list[BaseMessage]:
-        return self._sessions.get(tab_id, [])
-
-    def set(self, tab_id: str, messages: list[BaseMessage]) -> None:
-        self._sessions[tab_id] = messages
-
-    def clear(self, tab_id: str) -> bool:
-        """Returns True if a session existed and was removed."""
-        return self._sessions.pop(tab_id, None) is not None
-
-    def __len__(self) -> int:
-        return len(self._sessions)
-
-
-sessions = SessionStore()
-
-
-def serialize_messages(messages: list[BaseMessage]) -> list[dict]:
-    """Turn LangChain messages into the plain {role, text} shape the popup renders."""
-    out = []
-    for m in messages:
-        if isinstance(m, HumanMessage):
-            role = "user"
-        elif isinstance(m, AIMessage):
-            role = "ai"
-        else:
-            continue  # nothing else shows up in this demo's history
-        out.append({"role": role, "text": m.content})
-    return out
+# Persistent, tab-scoped conversation history. Replaces the old
+# in-memory SessionStore — same get/set/clear/__len__ shape, but backed
+# by SQLite under ~/.sicily/Navigator/ChatsData/chats.db, so history
+# survives a backend restart and reopening the same tab. See
+# ChatStore.py for the schema and the reasoning behind it.
+sessions = ChatStore()
 
 
 @app.get("/health")
@@ -142,8 +199,16 @@ async def get_session(tab_id: str):
     """
     Called by the popup on open, so switching back to a tab restores
     that tab's chat instead of showing a blank window.
+
+    Returns each row as {"role": "user"|"ai", "text": str,
+    "context_snippets": list[str]} — the same shape main.js already
+    expects from its startup history-replay loop (it calls
+    addContextTrail(m.context_snippets) then addMessage(m.text, role)
+    for each entry), so drag-dropped context, "Add to Chat" summaries,
+    and @-mentioned tab content all reappear exactly as they looked
+    when the turn was sent, not just the message text.
     """
-    return {"messages": serialize_messages(sessions.get(tab_id))}
+    return {"messages": sessions.get_full(tab_id)}
 
 
 @app.delete("/session/{tab_id}")
@@ -154,114 +219,6 @@ async def delete_session(tab_id: str):
     """
     existed = sessions.clear(tab_id)
     return {"status": "cleared", "existed": existed}
-
-
-class EditSelectionRequest(BaseModel):
-    selected_text: str
-    instruction: str
-    surrounding_context: str = ""
-    action_type: str = "edit"  # New flag: "edit" or "ask"
-
-
-class EditSelectionResponse(BaseModel):
-    edited_text: str
-
-
-# For Pydantic purposes
-class EditResult(BaseModel):
-    edited_text: str = Field(
-        description="The final output to return to the user, either a rewritten text or a direct answer to their question."
-    )
-
-
-import uuid
-
-async def call_edit_model(selected_text: str, instruction: str, action_type: str = "edit", surrounding_context: str = "") -> str:
-    llm = configuration.get_intent_llm(EditResult)
-    
-    # Branch the persona based on the button clicked
-    if action_type == "ask":
-        system_msg = SystemMessage(
-            content=(
-                "You are a precise, direct information assistant. "
-                "The user has selected some text and asked a question about it. "
-                "Answer their question completely and directly based on the selected text and context. "
-                "CRITICAL CONSTRAINT: Output ONLY the direct answer to the user's question. "
-                "Do NOT include any conversational filler, pleasantries, meta-commentary, "
-                "or follow-up prompts (e.g., never end with 'Let me know if you need more details', "
-                "'Hope this helps!', or 'Shall I do anything else?'). "
-                "Provide a clean, self-contained final response with absolutely no open-ended transitions."
-            )
-        )
-    else:
-        system_msg = SystemMessage(
-            content=(
-                "You are an automated, programmatic text-replacement engine. "
-                "Rewrite the user's selected text exactly according to their instruction. "
-                "CRITICAL CONSTRAINT: Output EXCLUSIVELY the final revised text. "
-                "Do NOT include any introductions, explanations, pleasantries, meta-commentary, "
-                "or follow-up questions (e.g., never say 'Here is the rewrite' or ask 'Want me to shorten it?'). "
-                "Your entire output will be injected directly into the user's document, so any extra words, "
-                "conversational notes, or markdown formatting wrappers will completely corrupt their file."
-            )
-        )
-    
-    prompt_text = f"Instruction/Question: {instruction}\n\nSelected Text:\n{selected_text}"
-    if surrounding_context:
-        prompt_text += f"\n\nSurrounding Context:\n{surrounding_context}"
-        
-    from usage_tracker import record_usage
-    
-    edited_text = ""
-    session_id = f"edit_{uuid.uuid4().hex[:8]}"
-    
-    try:
-        # Use astream_events to catch the AIMessage tokens before Pydantic parsing
-        async for event in llm.astream_events([system_msg, HumanMessage(content=prompt_text)], version="v2"):
-            
-            # 1. Catch the raw LLM usage stats
-            if event["event"] == "on_chat_model_end":
-                output = event.get("data", {}).get("output")
-                if output and hasattr(output, "usage_metadata") and output.usage_metadata:
-                    usage = output.usage_metadata
-                    model_name = output.response_metadata.get("model_name", "unknown")
-                    
-                    record_usage(
-                        dimension="navigator",
-                        session_id=session_id,
-                        model_name=model_name,
-                        input_tokens=usage.get("input_tokens", 0),
-                        output_tokens=usage.get("output_tokens", 0),
-                        cached_input_tokens=usage.get("input_token_details", {}).get("cache_read_tokens", 0)
-                    )
-            
-            # 2. Catch the final structured output
-            elif event["event"] == "on_chain_end":
-                data_out = event.get("data", {}).get("output")
-                if isinstance(data_out, EditResult):
-                    edited_text = data_out.edited_text
-                    
-    except Exception as e:
-        log.warning("Failed during edit event stream tracking", error=str(e))
-    
-    # Fallback in case the event stream didn't resolve the text correctly
-    if not edited_text:
-        response = await llm.ainvoke([system_msg, HumanMessage(content=prompt_text)])
-        edited_text = response.edited_text
-        
-    return edited_text
-
-
-@app.post("/edit-selection", response_model=EditSelectionResponse)
-async def edit_selection(req: EditSelectionRequest):
-    # Pass the action_type down
-    edited = await call_edit_model(
-        req.selected_text, 
-        req.instruction, 
-        req.action_type, 
-        req.surrounding_context
-    )
-    return EditSelectionResponse(edited_text=edited)
 
 
 @app.websocket("/ws/{tab_id}")
@@ -276,8 +233,10 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
             user_text = (payload.get("text") or "").strip()
             page_url = payload.get("page_url") or ""
             page_title = payload.get("page_title") or ""
+            
+            context_snippets = payload.get("context_snippets") or []
 
-            log.info("Received message", tab_id=tab_id, text=user_text, page_url=page_url)
+            log.info("Received message", tab_id=tab_id, text=user_text, page_url=page_url, snippets_count=len(context_snippets))
 
             if not user_text:
                 await websocket.send_json({"reply": "(empty message ignored)"})
@@ -291,6 +250,7 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
                 "messages": history + [HumanMessage(content=user_text)],
                 "page_url": page_url,
                 "page_title": page_title,
+                "context_snippets": context_snippets, # 2. Forward the snippets into LangGraph state!
             })
 
             # Track token usage from the returned message state
@@ -302,21 +262,20 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
                         model_name = msg.response_metadata.get("model_name", "unknown")
                         msg_id = getattr(msg, "id", None)
                         
-                        record_usage(
-                            dimension="navigator",
-                            session_id=tab_id,
-                            model_name=model_name,
-                            input_tokens=usage_meta.get("input_tokens", 0),
-                            output_tokens=usage_meta.get("output_tokens", 0),
-                            cached_input_tokens=usage_meta.get("input_token_details", {}).get("cache_read_tokens", 0),
-                            message_id=msg_id
-                        )
+                        try:
+                            record_usage(
+                                dimension="navigator",
+                                session_id=tab_id,
+                                model_name=model_name,
+                                input_tokens=usage_meta.get("input_tokens", 0),
+                                output_tokens=usage_meta.get("output_tokens", 0),
+                                cached_input_tokens=usage_meta.get("input_token_details", {}).get("cache_read_tokens", 0),
+                                message_id=msg_id
+                            )
+                        except Exception as rec_err:
+                            log.warning("record_usage failed for navigator", error=str(rec_err))
             except Exception as token_err:
                 log.warning("Failed to collect navigator token metrics", error=str(token_err))
-
-            # Persist the updated history (old messages + new human + new ai)
-            # for this tab, so it's there next time this tab's popup opens.
-            sessions.set(tab_id, result["messages"])
 
             # Pull the newest AI message out as plain text.
             reply_text = "(no response)"
@@ -324,6 +283,22 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
                 if isinstance(msg, AIMessage) and msg.content:
                     reply_text = msg.content
                     break
+
+            # Persist just this turn (the new human message + the new AI
+            # reply), along with whatever context_snippets rode alongside
+            # the human message — not the whole rebuilt `result["messages"]`
+            # array, since `history` already contains everything before
+            # this turn and is itself sourced from ChatStore on the next
+            # call. This is what makes the "Ctrl+Shift+T reopen the same
+            # tab" and "backend restarted" cases both come back exactly as
+            # they were: the row-level context_snippets travel with the
+            # user's message, not just its text.
+            sessions.append_turn(
+                tab_id=tab_id,
+                user_text=user_text,
+                ai_text=reply_text,
+                context_snippets=context_snippets,
+            )
 
             await websocket.send_json({"reply": reply_text})
 
