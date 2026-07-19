@@ -207,15 +207,50 @@ async function extractFullPageText(tabId) {
     const injectionResult = await chrome.scripting.executeScript({
         target: { tabId },
         func: () => {
-            const clone = document.cloneNode(true);
+            // IMPORTANT: .innerText is layout-dependent — it needs computed
+            // styles/visibility/line boxes to know what counts as "visible
+            // text". A detached clone (document.cloneNode(true)) has no
+            // layout at all, so on ordinary static pages .innerText on the
+            // clone happens to still work "well enough", but on heavy
+            // client-rendered SPAs like Google Docs or Overleaf — where the
+            // real content lives behind virtualization / display:none
+            // toggling / canvas-backed editor layers — a detached clone's
+            // .innerText comes back empty or near-empty every single time.
+            // That's why extraction failed consistently on those specific
+            // sites rather than flakily.
+            //
+            // Fix: walk the LIVE document instead of a detached clone, then
+            // restore whatever we removed so the real page is never left
+            // mutated (executeScript's isolated world only isolates JS
+            // globals — DOM mutations to the real page ARE visible to it).
             const tagsToRemove = ['nav', 'footer', 'aside', 'script', 'style', 'noscript', 'header'];
+            const removed = [];
+
             tagsToRemove.forEach(tag => {
-                const elements = clone.querySelectorAll(tag);
-                elements.forEach(el => el.parentNode?.removeChild(el));
+                document.body?.querySelectorAll(tag).forEach(el => {
+                    removed.push({ el, parent: el.parentNode, next: el.nextSibling });
+                    el.parentNode?.removeChild(el);
+                });
             });
-            // No truncation here — this is the raw content the model should
-            // reason over directly, not a summarisation input.
-            return clone.body ? clone.body.innerText : "";
+
+            let text = "";
+            try {
+                // No truncation here — this is the raw content the model
+                // should reason over directly, not a summarisation input.
+                text = document.body ? document.body.innerText : "";
+            } finally {
+                // Restore the page exactly as it was, in original order.
+                for (const { el, parent, next } of removed) {
+                    if (!parent) continue;
+                    if (next && next.parentNode === parent) {
+                        parent.insertBefore(el, next);
+                    } else {
+                        parent.appendChild(el);
+                    }
+                }
+            }
+
+            return text;
         }
     });
     return injectionResult[0]?.result || "";
