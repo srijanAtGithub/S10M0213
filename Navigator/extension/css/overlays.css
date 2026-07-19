@@ -604,6 +604,7 @@
     flex-direction: column;
     padding: 12px 14px;
     border-radius: 12px;
+    position: relative;
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.08);
     color: #f2f2f7;
@@ -613,6 +614,53 @@
     cursor: pointer;
     transition: background 0.15s ease, transform 0.1s ease;
     animation: fluidPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Room on the right for the hover '+' button so the title/url text
+   doesn't run underneath it. */
+.link-result-item .link-result-title,
+.link-result-item .link-result-url,
+.link-result-item .link-result-reason {
+    padding-right: 30px;
+    box-sizing: border-box;
+}
+
+/* Hover '+' — "add to a reading list group". Same size/position/reveal
+   language as .item-delete-btn, but a neutral accent instead of red
+   since this adds rather than destroys. */
+.link-result-add-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #f2f2f7;
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.link-result-add-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-50%) scale(1.05);
+}
+
+.link-result-add-btn:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+.link-result-item:hover .link-result-add-btn {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .link-result-item:hover {
@@ -997,4 +1045,172 @@
 .snippet-view-item:hover .item-delete-btn {
     opacity: 1;
     pointer-events: auto;
+}
+
+/* --- Add to Reading List Group Picker Overlay --- */
+/* Same shape as #collections-picker-overlay, at a higher z-index because
+   it can be launched from a card inside #find-more-overlay (z-index 110)
+   and needs to sit above it rather than behind it. */
+#reading-list-picker-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 130;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#reading-list-picker-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.reading-list-picker-card {
+    max-width: 340px;
+    max-height: 70vh;
+    transform: scale(0.95);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#reading-list-picker-overlay.active .reading-list-picker-card {
+    transform: scale(1);
+}
+
+/* Link preview — reminds the user what they're filing away. Two lines
+   (title + url) rather than the free-text preview Collections uses,
+   since what's being saved here is a link card, not a text snippet. */
+.reading-list-picker-preview {
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #a1a1aa;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 8px 10px;
+    max-height: 64px;
+    overflow-y: auto;
+}
+
+.reading-list-picker-preview-title {
+    font-weight: 600;
+    color: #f2f2f7;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --- Reading List Groups View Overlay --- */
+/* Mirrors #collections-view-overlay exactly — group list (Scene A) that
+   drills into a single group's saved links (Scene B) with a Back button. */
+#reading-list-groups-view-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 120;
+    background: rgba(10, 10, 12, 0.65);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#reading-list-groups-view-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#reading-list-groups-view-overlay .organise-card {
+    max-width: 100%;
+    width: 550px;
+    max-height: 85vh;
+}
+
+/* Read/unread toggle on a saved-link row inside a group — a tick mark
+   sitting in the outer slot (right:12px), same position .item-delete-btn
+   normally occupies on its own. Unread state is subtle and only appears
+   on hover (so an unread list doesn't look cluttered), but once marked
+   read it stays visibly green at all times, not just while hovering —
+   that's the whole point of the tick, it's a persistent status
+   indicator that should read at a glance without needing to hover. The
+   delete button sits in the inner slot (right:48px) here since the tick
+   took its usual spot, and stays hover-only just like every other
+   delete button in this UI (collections, snippets) — never shown
+   alongside a checked tick by default. */
+.item-read-toggle-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #f2f2f7;
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+.item-read-toggle-btn.is-read {
+    background: rgba(48, 209, 88, 0.15);
+    border-color: rgba(48, 209, 88, 0.3);
+    color: #30d158;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.item-read-toggle-btn:hover {
+    transform: translateY(-50%) scale(1.05);
+}
+
+.item-read-toggle-btn:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+.reading-list-item-view:hover .item-read-toggle-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* Inner slot for the reading-list row's delete button — same hover-only
+   reveal as .item-delete-btn's base rule (no always-visible override
+   here), matching the Saved Collections / snippet rows exactly. */
+.reading-list-item-view .item-delete-btn {
+    right: 48px;
+}
+
+.reading-list-item-view:hover .item-delete-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.reading-list-item-view.is-read .link-result-title {
+    color: #8e8e93;
+    text-decoration: line-through;
+    text-decoration-color: rgba(142, 142, 147, 0.5);
+}
+
+/* Two buttons (read-toggle + delete) sit on the right of a reading-list
+   row instead of the single '+' a find-more card gets, so it needs more
+   clearance than the base .link-result-item rule provides. */
+.reading-list-item-view .link-result-title,
+.reading-list-item-view .link-result-url,
+.reading-list-item-view .link-result-reason {
+    padding-right: 66px;
 }

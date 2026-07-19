@@ -32,6 +32,13 @@ const collectionsPickerList = document.getElementById("collections-picker-list")
 const collectionsCreateBtn = document.getElementById("collections-create-btn");
 const collectionsCreateBtnLabel = document.getElementById("collections-create-btn-label");
 
+const readingListPickerOverlay = document.getElementById("reading-list-picker-overlay");
+const readingListPickerPreviewTitle = document.getElementById("reading-list-picker-preview-title");
+const readingListPickerInput = document.getElementById("reading-list-picker-input");
+const readingListPickerList = document.getElementById("reading-list-picker-list");
+const readingListCreateBtn = document.getElementById("reading-list-create-btn");
+const readingListCreateBtnLabel = document.getElementById("reading-list-create-btn-label");
+
 // Wire up the OK button to just close the overlay
 btnOkSummary?.addEventListener("click", () => {
   summaryOverlay.classList.remove("active");
@@ -90,6 +97,21 @@ collectionsViewOverlay?.addEventListener("click", (e) => {
 // The "Back" button returns to the main collections list (Scene A)
 collectionsViewBackBtn?.addEventListener("click", openSavedCollectionsView);
 
+// ── Reading List Groups Viewer ────────────────────────────────────────
+const readingListGroupsViewOverlay = document.getElementById("reading-list-groups-view-overlay");
+const readingListGroupsViewList = document.getElementById("reading-list-groups-view-list");
+const readingListGroupsViewTitle = document.getElementById("reading-list-groups-view-title");
+const readingListGroupsViewBackBtn = document.getElementById("reading-list-groups-view-back-btn");
+const readingListGroupsViewActions = document.getElementById("reading-list-groups-view-actions");
+
+readingListGroupsViewOverlay?.addEventListener("click", (e) => {
+  if (!e.target.closest(".organise-card")) {
+    readingListGroupsViewOverlay.classList.remove("active");
+  }
+});
+
+readingListGroupsViewBackBtn?.addEventListener("click", openReadingListGroupsView);
+
 export let attachedContexts = [];
 let expandedContextIndices = new Set();
 let qaCloseTimer = null;
@@ -147,11 +169,15 @@ function handleQuickAction(action) {
     startFindMoreLikeThis();
     return;
   }
+  if (action === "reading-list-groups") {
+    openReadingListGroupsView();
+    return;
+  }
 
   const labels = {
     "summarise-page": "Summarise Page",
     "find-more-like-this": "Find More Like This",
-    "reading-lists": "Your Reading Lists",
+    "reading-list-groups": "Reading List Groups",
     "saved-collections": "Saved Collections",
   };
   const actionName = labels[action] || action;
@@ -491,9 +517,29 @@ function renderFindMoreResults(results, { append = false } = {}) {
     reason.className = "link-result-reason";
     reason.textContent = r.reason || "";
 
+    // Hover '+' — opens the "Add to Reading List" group picker for this
+    // result. Stops propagation so it doesn't also trigger the card's
+    // own href navigation.
+    const addBtn = document.createElement("div");
+    addBtn.className = "link-result-add-btn";
+    addBtn.title = "Add to Reading List";
+    addBtn.innerHTML = `<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+      <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>`;
+    addBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openReadingListPicker({
+        title: r.title || r.url,
+        url: r.url,
+        reason: r.reason || "",
+      });
+    });
+
     item.appendChild(title);
     item.appendChild(url);
     if (r.reason) item.appendChild(reason);
+    item.appendChild(addBtn);
 
     findMoreList.appendChild(item);
     if (!firstNewItem) firstNewItem = item;
@@ -879,5 +925,352 @@ function renderSnippetsView(snippets) {
     });
 
     collectionsViewList.appendChild(item);
+  });
+}
+
+// ── Add to Reading List Group Picker ────────────────────────────────
+// Entry point is the hover '+' on a link-result-item (see
+// renderFindMoreResults above). This owns the floating picker: it
+// fetches existing reading list groups, filters them live as the user
+// types, and posts to /reading-list-groups/add-item whether the user
+// picks an existing group or types a brand new name ("Create & Add").
+// Structurally identical to the Collections picker just above.
+
+let pendingReadingListLink = null; // { title, url, reason } captured at '+' click time
+let allReadingListGroups = [];     // last fetch from GET /reading-list-groups
+
+async function openReadingListPicker(link) {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+  pendingReadingListLink = {
+    title: link.title,
+    url: link.url,
+    reason: link.reason || "",
+    source_title: tab?.title || "",
+    source_url: tab?.url || "",
+  };
+
+  readingListPickerPreviewTitle.textContent = link.title;
+  readingListPickerInput.value = "";
+  readingListPickerOverlay.classList.add("active");
+
+  readingListPickerList.innerHTML = `<div class="collections-picker-empty">Loading reading lists…</div>`;
+  updateReadingListCreateButton("");
+
+  try {
+    const res = await fetch(`http://${BACKEND_HOST}/reading-list-groups`);
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const data = await res.json();
+    allReadingListGroups = data.groups || [];
+  } catch (err) {
+    allReadingListGroups = [];
+    readingListPickerList.innerHTML = `<div class="collections-picker-empty">Couldn't reach the backend — is navigator_bridge.py running?</div>`;
+    return;
+  }
+
+  renderReadingListGroupsPickerList("");
+  readingListPickerInput.focus();
+}
+
+function closeReadingListPicker() {
+  readingListPickerOverlay.classList.remove("active");
+  pendingReadingListLink = null;
+}
+
+readingListPickerOverlay?.addEventListener("click", (e) => {
+  if (!e.target.closest(".organise-card")) {
+    closeReadingListPicker();
+  }
+});
+
+readingListPickerInput?.addEventListener("input", () => {
+  const query = readingListPickerInput.value.trim();
+  renderReadingListGroupsPickerList(query);
+  updateReadingListCreateButton(query);
+});
+
+readingListPickerInput?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const query = readingListPickerInput.value.trim();
+    const filtered = filterReadingListGroups(query);
+    const exact = filtered.find((g) => g.name.toLowerCase() === query.toLowerCase());
+    if (exact) {
+      submitLinkToReadingListGroup(exact.name);
+    } else if (query) {
+      submitLinkToReadingListGroup(query);
+    }
+  } else if (e.key === "Escape") {
+    closeReadingListPicker();
+  }
+});
+
+readingListCreateBtn?.addEventListener("click", () => {
+  const query = readingListPickerInput.value.trim();
+  if (query) submitLinkToReadingListGroup(query);
+});
+
+function filterReadingListGroups(query) {
+  if (!query) return allReadingListGroups;
+  const q = query.toLowerCase();
+  return allReadingListGroups.filter((g) => g.name.toLowerCase().includes(q));
+}
+
+function renderReadingListGroupsPickerList(query) {
+  const filtered = filterReadingListGroups(query);
+  readingListPickerList.innerHTML = "";
+
+  if (filtered.length === 0) {
+    readingListPickerList.innerHTML = `<div class="collections-picker-empty">${allReadingListGroups.length === 0 ? "No reading lists yet." : "No matching reading lists."
+      }</div>`;
+    return;
+  }
+
+  filtered.forEach((g) => {
+    const item = document.createElement("button");
+    item.className = "collection-picker-item";
+
+    const icon = document.createElement("span");
+    icon.className = "qa-icon";
+    icon.innerHTML = `<svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 3.5h10a.5.5 0 0 1 .5.5v12.3a.3.3 0 0 1-.46.25L10 13.8l-5.04 2.75a.3.3 0 0 1-.46-.25V4a.5.5 0 0 1 .5-.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+    </svg>`;
+
+    const name = document.createElement("span");
+    name.className = "collection-picker-name";
+    name.textContent = g.name;
+
+    const count = document.createElement("span");
+    count.className = "collection-picker-count";
+    count.textContent = g.item_count;
+
+    item.appendChild(icon);
+    item.appendChild(name);
+    item.appendChild(count);
+
+    item.addEventListener("click", () => submitLinkToReadingListGroup(g.name));
+    readingListPickerList.appendChild(item);
+  });
+}
+
+function updateReadingListCreateButton(query) {
+  if (!query) {
+    readingListCreateBtn.classList.add("hidden");
+    return;
+  }
+  const exists = allReadingListGroups.some((g) => g.name.toLowerCase() === query.toLowerCase());
+  if (exists) {
+    readingListCreateBtn.classList.add("hidden");
+  } else {
+    readingListCreateBtnLabel.textContent = `Create "${query}" & Add`;
+    readingListCreateBtn.classList.remove("hidden");
+  }
+}
+
+async function submitLinkToReadingListGroup(groupName) {
+  if (!pendingReadingListLink) return;
+  const link = pendingReadingListLink;
+  closeReadingListPicker();
+
+  try {
+    const res = await fetch(`http://${BACKEND_HOST}/reading-list-groups/add-item`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        group_name: groupName,
+        title: link.title,
+        url: link.url,
+        reason: link.reason,
+        source_title: link.source_title,
+        source_url: link.source_url,
+      }),
+    });
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const data = await res.json();
+    if (data.already_existed) {
+      NotificationService.show(`Already in "${data.group_name}".`);
+    } else {
+      NotificationService.show(
+        data.created_new_group
+          ? `Created "${data.group_name}" and added link.`
+          : `Added to "${data.group_name}".`
+      );
+    }
+  } catch (err) {
+    console.error("Add to reading list failed:", err);
+    NotificationService.show("Couldn't save to reading list — is the backend running?");
+  }
+}
+
+// ── Reading List Groups Viewer ──────────────────────────────────────
+// Opened from the "Reading List Groups" quick action. Scene A lists
+// every group; clicking one drills into Scene B showing its saved
+// links, each with a read/unread toggle and a delete button — same
+// two-scene shape as the Saved Collections viewer above.
+
+async function openReadingListGroupsView() {
+  readingListGroupsViewOverlay.classList.add("active");
+  readingListGroupsViewTitle.textContent = "Reading List Groups";
+  readingListGroupsViewActions.style.display = "none";
+
+  readingListGroupsViewList.innerHTML = `<div class="collections-picker-empty">Loading reading lists...</div>`;
+
+  try {
+    const res = await fetch(`http://${BACKEND_HOST}/reading-list-groups`);
+    if (!res.ok) throw new Error("Failed to load");
+    const data = await res.json();
+    renderReadingListGroupsView(data.groups || []);
+  } catch (err) {
+    readingListGroupsViewList.innerHTML = `<div class="collections-picker-empty">Backend unreachable.</div>`;
+  }
+}
+
+function renderReadingListGroupsView(groups) {
+  readingListGroupsViewList.innerHTML = "";
+  if (groups.length === 0) {
+    readingListGroupsViewList.innerHTML = `<div class="collections-picker-empty">No reading list groups yet.</div>`;
+    return;
+  }
+
+  groups.forEach(g => {
+    const item = document.createElement("button");
+    item.className = "collection-view-item";
+    item.innerHTML = `
+      <div style="padding-right: 32px; text-align: left;">
+        <div style="font-weight: 600;">${g.name}</div>
+        <div style="font-size: 11px; color: #8e8e93; margin-top: 3px;">${g.item_count} saved link${g.item_count !== 1 ? 's' : ''}</div>
+      </div>
+      <div class="item-delete-btn" title="Delete Reading List">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+          <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        </svg>
+      </div>
+    `;
+
+    item.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openReadingListGroupItems(g.id, g.name);
+    });
+
+    const deleteBtn = item.querySelector('.item-delete-btn');
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete reading list "${g.name}"?`)) return;
+
+      try {
+        const res = await fetch(`http://${BACKEND_HOST}/reading-list-groups/${g.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error("Failed to delete");
+
+        item.remove();
+        NotificationService.show(`Deleted "${g.name}"`);
+      } catch (err) {
+        NotificationService.show("Error deleting reading list.");
+      }
+    });
+
+    readingListGroupsViewList.appendChild(item);
+  });
+}
+
+async function openReadingListGroupItems(groupId, groupName) {
+  readingListGroupsViewTitle.textContent = groupName;
+  readingListGroupsViewActions.style.display = "flex";
+
+  readingListGroupsViewList.innerHTML = `<div class="collections-picker-empty">Loading links...</div>`;
+
+  try {
+    const res = await fetch(`http://${BACKEND_HOST}/reading-list-groups/${groupId}`);
+    if (!res.ok) throw new Error("Failed to load");
+    const data = await res.json();
+    renderReadingListItemsView(data.items || []);
+  } catch (err) {
+    readingListGroupsViewList.innerHTML = `<div class="collections-picker-empty">Error loading links.</div>`;
+  }
+}
+
+function renderReadingListItemsView(items) {
+  readingListGroupsViewList.innerHTML = "";
+  if (items.length === 0) {
+    readingListGroupsViewList.innerHTML = `<div class="collections-picker-empty">This reading list is empty.</div>`;
+    return;
+  }
+
+  items.forEach(it => {
+    const item = document.createElement("a");
+    item.className = "link-result-item reading-list-item-view" + (it.is_read ? " is-read" : "");
+    item.href = it.url;
+    item.target = "_blank";
+    item.rel = "noopener noreferrer";
+
+    const title = document.createElement("div");
+    title.className = "link-result-title";
+    title.textContent = it.title;
+
+    const url = document.createElement("div");
+    url.className = "link-result-url";
+    url.textContent = it.url;
+
+    item.appendChild(title);
+    item.appendChild(url);
+
+    if (it.reason) {
+      const reason = document.createElement("div");
+      reason.className = "link-result-reason";
+      reason.textContent = it.reason;
+      item.appendChild(reason);
+    }
+
+    // Tick mark in both states — dim/outline when unread, filled green
+    // (via the .is-read CSS rule) when read. Same glyph throughout, only
+    // the styling communicates the state, so it always reads as "mark as
+    // read" rather than switching to a different icon after the toggle.
+    const TICK_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><path d="M20 6 9 17l-5-5"/></svg>`;
+
+    const readBtn = document.createElement("div");
+    readBtn.className = "item-read-toggle-btn" + (it.is_read ? " is-read" : "");
+    readBtn.title = it.is_read ? "Mark as unread" : "Mark as read";
+    readBtn.innerHTML = TICK_SVG;
+    readBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const newIsRead = !it.is_read;
+      try {
+        const res = await fetch(`http://${BACKEND_HOST}/reading-list-groups/items/${it.id}/read`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_read: newIsRead }),
+        });
+        if (!res.ok) throw new Error("Failed to update");
+        it.is_read = newIsRead;
+        item.classList.toggle("is-read", newIsRead);
+        readBtn.classList.toggle("is-read", newIsRead);
+        readBtn.title = newIsRead ? "Mark as unread" : "Mark as read";
+      } catch (err) {
+        NotificationService.show("Error updating read status.");
+      }
+    });
+
+    const deleteBtn = document.createElement("div");
+    deleteBtn.className = "item-delete-btn";
+    deleteBtn.title = "Remove Link";
+    deleteBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+      <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+    </svg>`;
+    deleteBtn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      try {
+        const res = await fetch(`http://${BACKEND_HOST}/reading-list-groups/items/${it.id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error("Failed to delete");
+        item.remove();
+        NotificationService.show("Link removed from reading list.");
+      } catch (err) {
+        NotificationService.show("Error deleting link.");
+      }
+    });
+
+    item.appendChild(readBtn);
+    item.appendChild(deleteBtn);
+    readingListGroupsViewList.appendChild(item);
   });
 }

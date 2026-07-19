@@ -47,6 +47,19 @@ from Navigator.Task_Files.Collections import (
     process_delete_collection,
     process_delete_snippet,
 )
+from Navigator.Task_Files.Reading_List_Groups import (
+    ListReadingListGroupsResponse,
+    ReadingListGroupDetailResponse,
+    AddReadingListItemRequest,
+    AddReadingListItemResponse,
+    SetReadRequest,
+    process_list_reading_list_groups,
+    process_get_reading_list_group,
+    process_add_reading_list_item,
+    process_set_read,
+    process_delete_reading_list_group,
+    process_delete_reading_list_item,
+)
 
 log = structlog.get_logger()
 
@@ -113,6 +126,48 @@ async def add_snippet(req: AddSnippetRequest):
     except ValueError as e:
         from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=str(e))
+
+# ── Reading List Groups ──────────────────────────────────────────────
+# The '+' hovering over a link-bearing card (Find More Like This results
+# today) opens a floating picker — existing reading-list groups,
+# filterable, plus "create and add" — mirroring the Collections picker
+# above exactly. See Reading_List_Groups.py for the SQLite-backed storage.
+
+@app.get("/reading-list-groups", response_model=ListReadingListGroupsResponse)
+async def list_reading_list_groups():
+    return await process_list_reading_list_groups()
+
+@app.get("/reading-list-groups/{group_id}", response_model=ReadingListGroupDetailResponse)
+async def get_reading_list_group(group_id: int):
+    try:
+        return await process_get_reading_list_group(group_id)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(e))
+
+@app.delete("/reading-list-groups/{group_id}")
+async def delete_reading_list_group(group_id: int):
+    return await process_delete_reading_list_group(group_id)
+
+@app.delete("/reading-list-groups/items/{item_id}")
+async def delete_reading_list_item(item_id: int):
+    return await process_delete_reading_list_item(item_id)
+
+@app.post("/reading-list-groups/add-item", response_model=AddReadingListItemResponse)
+async def add_reading_list_item(req: AddReadingListItemRequest):
+    try:
+        return await process_add_reading_list_item(req)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.patch("/reading-list-groups/items/{item_id}/read")
+async def set_reading_list_item_read(item_id: int, req: SetReadRequest):
+    try:
+        return await process_set_read(item_id, req.is_read)
+    except ValueError as e:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=str(e))
 
 # One compiled graph instance, reused for every turn on every tab.
 # It has no memory of its own — memory lives in the ChatStore below and

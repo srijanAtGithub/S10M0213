@@ -139,6 +139,55 @@
       </div>
     </div>
 
+    <!-- --- Add to Reading List Group Picker Overlay --- -->
+    <!-- Opened by the hover '+' on a link-result-item (Find More Like This
+         results). Same interaction as the Collections drag-and-drop
+         picker: filter existing groups, or type a new name to create one
+         and add to it. -->
+    <div id="reading-list-picker-overlay">
+      <div class="organise-card reading-list-picker-card">
+        <div class="organise-header">Add to Reading List</div>
+        <div class="reading-list-picker-preview" id="reading-list-picker-preview">
+          <div class="reading-list-picker-preview-title" id="reading-list-picker-preview-title"></div>
+        </div>
+
+        <input type="text" id="reading-list-picker-input" class="collections-picker-input"
+          placeholder="Find or create a reading list..." autocomplete="off" />
+
+        <div class="collections-picker-list" id="reading-list-picker-list">
+          <!-- populated at runtime with .collection-picker-item rows -->
+        </div>
+
+        <button class="collections-create-btn hidden" id="reading-list-create-btn">
+          <span class="qa-icon">
+            <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span id="reading-list-create-btn-label">Create &amp; Add</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- --- Reading List Groups View Overlay --- -->
+    <!-- Mirrors the Saved Collections viewer: Scene A lists every group,
+         clicking one drills into Scene B showing its saved links. -->
+    <div id="reading-list-groups-view-overlay">
+      <div class="organise-card collections-view-card">
+        <div class="organise-header" id="reading-list-groups-view-title">Reading List Groups</div>
+
+        <div class="collections-view-list" id="reading-list-groups-view-list">
+          <!-- Populated at runtime -->
+        </div>
+
+        <!-- Action Bar (Hidden in Scene A, Visible in Scene B) -->
+        <div class="summary-actions" id="reading-list-groups-view-actions" style="margin-top: 10px; display: none;">
+          <button class="summary-floating-btn" id="reading-list-groups-view-back-btn">← Back to Reading List
+            Groups</button>
+        </div>
+      </div>
+    </div>
+
     <div id="header">
       <div id="header-left">
         <div id="quick-actions">
@@ -188,7 +237,7 @@
 
             <div class="qa-divider"></div>
 
-            <button class="qa-item" data-action="reading-lists">
+            <button class="qa-item" data-action="reading-list-groups">
               <span class="qa-icon">
                 <svg viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path
@@ -196,7 +245,7 @@
                     stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" />
                 </svg>
               </span>
-              <span>Your Reading Lists</span>
+              <span>Reading List Groups</span>
             </button>
 
             <button class="qa-item" data-action="saved-collections">
