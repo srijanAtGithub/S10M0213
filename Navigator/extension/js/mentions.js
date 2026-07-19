@@ -23,14 +23,18 @@ const bottomDock = document.getElementById("bottom-dock");
 const inputRow = document.getElementById("input-row");
 
 // ── State ────────────────────────────────────────────────────────────
-// The currently mentioned tab's extracted content + metadata, or null.
-let mentionedTab = null; // { tabId, title, url, favIconUrl, content }
-let mentionedCollection = null; // { id, name }
+// All currently mentioned tabs / collections. Each @ or # pick now ADDS
+// to these lists (de-duped by id) instead of replacing a single value —
+// the bar's display collapses to "Using Multiple Tabs/Collections" once
+// there's more than one, but every item picked is kept and sent.
+let mentionedTabs = []; // [{ tabId, title, url, favIconUrl, content }]
+let mentionedCollections = []; // [{ id, name }]
 
 // Mention-typing state: are we mid "@filter" or "#filter" in the input right now?
 let mentionActive = false;
 let mentionType = null; // '@' or '#'
 let mentionStartIndex = -1; // index of the trigger character in inputEl.value
+let blurCloseTimer = null; // pending delayed close-on-blur, cancellable
 
 let dropdownEl = null;
 let allTabsCache = []; // refreshed each time the dropdown opens
@@ -38,39 +42,40 @@ let allCollectionsCache = []; // refreshed each time the # dropdown opens
 let highlightedIndex = 0;
 
 // ── Public API ───────────────────────────────────────────────────────
-export function getMentionedTabContent() {
-    return mentionedTab ? mentionedTab.content : null;
-}
 
-export function getMentionedTabSnippet() {
-    // Framed the same way attachedContexts snippets read on the wire, so
-    // the backend (which just folds context_snippets into the turn) needs
-    // no changes at all.
-    if (!mentionedTab) return null;
-    return `Tab: "${mentionedTab.title}"]\n\n${mentionedTab.content}`;
+// Every mentioned tab, framed the same way attachedContexts snippets read
+// on the wire (backend just folds context_snippets into the turn, so no
+// backend changes needed here). Each tab gets its own clearly-labeled
+// block so the model can tell them apart when asked "where is X mentioned".
+export function getMentionedTabSnippets() {
+    if (!mentionedTabs.length) return [];
+    return mentionedTabs.map(t => `Tab: "${t.title}"\n\n${t.content}`);
 }
 
 export function hasMentionedTab() {
-    return !!mentionedTab;
+    return mentionedTabs.length > 0;
 }
 
 export function clearMentionedTab({ animate = true } = {}) {
-    if (!mentionedTab) return;
-    mentionedTab = null;
+    if (!mentionedTabs.length) return;
+    mentionedTabs = [];
     hideUsingBar(animate);
 }
 
-export function getMentionedCollectionId() {
-    return mentionedCollection ? mentionedCollection.id : null;
+// Collection IDs only — main.js fetches each collection's full text from
+// the backend right before sending, same as it always did for the single
+// case, just now for every id in the list.
+export function getMentionedCollectionIds() {
+    return mentionedCollections.map(c => c.id);
 }
 
 export function hasMentionedCollection() {
-    return !!mentionedCollection;
+    return mentionedCollections.length > 0;
 }
 
 export function clearMentionedCollection({ animate = true } = {}) {
-    if (!mentionedCollection) return;
-    mentionedCollection = null;
+    if (!mentionedCollections.length) return;
+    mentionedCollections = [];
     hideUsingCollectionBar(animate);
 }
 
@@ -79,6 +84,11 @@ export function isMentionDropdownOpen() {
 }
 
 // ── "Using: tab" bar ─────────────────────────────────────────────────
+// Single tab  -> favicon + "Using Tab: <title>"
+// 2+ tabs     -> up to 3 stacked favicons + "Using Multiple Tabs"
+// Clicking the bar (anywhere except the close button) reopens the same
+// @ dropdown UI used to pick tabs in the first place, with everything
+// already picked pre-checked, so adding/removing more stays one flow.
 let usingBarEl = null;
 
 function ensureUsingBarEl() {
@@ -107,7 +117,7 @@ function ensureUsingBarEl() {
     const closeBtn = document.createElement("div");
     closeBtn.className = "using-tab-close";
     closeBtn.innerHTML = "&times;";
-    closeBtn.title = "Stop using this tab";
+    closeBtn.title = "Stop using tabs";
     closeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         clearMentionedTab();
@@ -117,6 +127,8 @@ function ensureUsingBarEl() {
     usingBarEl.appendChild(label);
     usingBarEl.appendChild(closeBtn);
 
+    usingBarEl.addEventListener("click", () => openManageDropdown("@"));
+
     // Insert directly above #input-row, inside the same floating dock, so
     // it shares the glass cluster and pushes the input row down naturally.
     bottomDock.insertBefore(usingBarEl, inputRow);
@@ -124,19 +136,29 @@ function ensureUsingBarEl() {
     return usingBarEl;
 }
 
-function showUsingBar(tab, { animate = true } = {}) {
+function showUsingBar({ animate = true } = {}) {
     const el = ensureUsingBarEl();
-
     const iconWrap = el.querySelector(".using-tab-icon");
+    const prefixEl = el.querySelector(".using-tab-prefix");
     const nameEl = el.querySelector(".using-tab-name");
 
-    nameEl.textContent = tab.title || tab.url || "Untitled tab";
-    el.title = tab.url || "";
-    setTabIcon(iconWrap, tab.favIconUrl);
+    if (mentionedTabs.length === 1) {
+        const tab = mentionedTabs[0];
+        prefixEl.textContent = "Using Tab: ";
+        nameEl.textContent = tab.title || tab.url || "Untitled tab";
+        el.title = tab.url || "";
+        iconWrap.classList.remove("using-tab-icon--stack");
+        iconWrap.innerHTML = "";
+        setTabIcon(iconWrap, tab.favIconUrl);
+    } else {
+        prefixEl.textContent = "";
+        nameEl.textContent = "Using Multiple Tabs";
+        el.title = mentionedTabs.map(t => t.title || t.url).join(", ");
+        renderStackedFavicons(iconWrap, mentionedTabs);
+    }
 
     // Restart the "born from the input box" entrance animation every time
-    // a mention is (re)made — including replacing an existing mention —
-    // so the bar always visibly reasserts itself.
+    // a mention is (re)made, so the bar always visibly reasserts itself.
     el.classList.remove("using-tab-bar--born");
     el.classList.add("using-tab-bar--visible");
     if (animate) {
@@ -157,6 +179,20 @@ function hideUsingBar(animate = true) {
     setTimeout(() => {
         usingBarEl?.classList.remove("using-tab-bar--leaving", "using-tab-bar--born");
     }, 320);
+}
+
+// Renders up to 3 overlapping favicons (extra items just add to the
+// count implied by "Multiple", we don't need a "+N" badge here — the
+// label already says "Multiple Tabs").
+function renderStackedFavicons(iconWrap, tabs) {
+    iconWrap.classList.add("using-tab-icon--stack");
+    iconWrap.innerHTML = "";
+    tabs.slice(0, 3).forEach(tab => {
+        const slot = document.createElement("div");
+        slot.className = "using-tab-icon-slot";
+        setTabIcon(slot, tab.favIconUrl);
+        iconWrap.appendChild(slot);
+    });
 }
 
 function fallbackTabIconSvg() {
@@ -315,20 +351,28 @@ async function selectTabForMention(tab) {
     removeMentionTextFromInput();
     closeDropdown();
 
+    // Already mentioned — nothing to do here. Removing a mention only
+    // happens via the × in the manage view (opened by clicking the bar).
+    const alreadyMentioned = mentionedTabs.some(t => t.tabId === tab.id);
+    if (alreadyMentioned) {
+        inputEl.focus();
+        return;
+    }
+
     try {
         const content = await extractFullPageTextWithRetry(tab);
         if (!content) {
             NotificationService.show("Couldn't extract text from that tab.");
             return;
         }
-        mentionedTab = {
+        mentionedTabs.push({
             tabId: tab.id,
             title: tab.title || tab.url || "Untitled tab",
             url: tab.url || "",
             favIconUrl: tab.favIconUrl || "",
             content,
-        };
-        showUsingBar(mentionedTab, { animate: true });
+        });
+        showUsingBar({ animate: true });
     } catch (err) {
         console.error("Mention extraction error:", err);
         if (isMissingHostPermissionError(err)) {
@@ -344,6 +388,14 @@ async function selectTabForMention(tab) {
 }
 
 // ── "Using: collection" bar ──────────────────────────────────────────
+// Single collection -> list-glyph icon + "Using Collection: <name>"
+// 2+ collections     -> a single "stacked lists" glyph + "Using Multiple
+//                        Collections" (collections have no favicon to
+//                        stack, so instead of 3 duplicate icons we swap
+//                        to one glyph that reads as "several lists").
+const COLLECTION_ICON_SINGLE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`;
+const COLLECTION_ICON_MULTI = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="14" height="4" rx="1"></rect><rect x="6" y="10" width="14" height="4" rx="1"></rect><rect x="3" y="16" width="14" height="4" rx="1"></rect></svg>`;
+
 let usingCollectionBarEl = null;
 
 function ensureUsingCollectionBarEl() {
@@ -354,7 +406,7 @@ function ensureUsingCollectionBarEl() {
 
     const iconWrap = document.createElement("div");
     iconWrap.className = "using-tab-icon";
-    iconWrap.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"></path></svg>`;
+    iconWrap.innerHTML = COLLECTION_ICON_SINGLE;
 
     const label = document.createElement("div");
     label.className = "using-tab-label";
@@ -372,7 +424,7 @@ function ensureUsingCollectionBarEl() {
     const closeBtn = document.createElement("div");
     closeBtn.className = "using-tab-close";
     closeBtn.innerHTML = "&times;";
-    closeBtn.title = "Stop using this collection";
+    closeBtn.title = "Stop using collections";
     closeBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         clearMentionedCollection();
@@ -382,14 +434,28 @@ function ensureUsingCollectionBarEl() {
     usingCollectionBarEl.appendChild(label);
     usingCollectionBarEl.appendChild(closeBtn);
 
+    usingCollectionBarEl.addEventListener("click", () => openManageDropdown("#"));
+
     bottomDock.insertBefore(usingCollectionBarEl, inputRow);
     return usingCollectionBarEl;
 }
 
-function showUsingCollectionBar(collection, { animate = true } = {}) {
+function showUsingCollectionBar({ animate = true } = {}) {
     const el = ensureUsingCollectionBarEl();
+    const iconWrap = el.querySelector(".using-tab-icon");
+    const prefixEl = el.querySelector(".using-tab-prefix");
     const nameEl = el.querySelector(".using-tab-name");
-    nameEl.textContent = collection.name || "Untitled Collection";
+
+    if (mentionedCollections.length === 1) {
+        prefixEl.textContent = "Using Collection: ";
+        nameEl.textContent = mentionedCollections[0].name || "Untitled Collection";
+        iconWrap.innerHTML = COLLECTION_ICON_SINGLE;
+    } else {
+        prefixEl.textContent = "";
+        nameEl.textContent = "Using Multiple Collections";
+        el.title = mentionedCollections.map(c => c.name).join(", ");
+        iconWrap.innerHTML = COLLECTION_ICON_MULTI;
+    }
 
     el.classList.remove("using-tab-bar--born");
     el.classList.add("using-tab-bar--visible");
@@ -415,8 +481,14 @@ function hideUsingCollectionBar(animate = true) {
 function selectCollectionForMention(collection) {
     removeMentionTextFromInput();
     closeDropdown();
-    mentionedCollection = { id: collection.id, name: collection.name };
-    showUsingCollectionBar(mentionedCollection, { animate: true });
+
+    // Already mentioned — nothing to do here. Removing a mention only
+    // happens via the × in the manage view (opened by clicking the bar).
+    const alreadyMentioned = mentionedCollections.some(c => c.id === collection.id);
+    if (!alreadyMentioned) {
+        mentionedCollections.push({ id: collection.id, name: collection.name });
+        showUsingCollectionBar({ animate: true });
+    }
     inputEl.focus();
 }
 
@@ -511,12 +583,22 @@ function closeDropdown() {
     mentionActive = false;
     mentionType = null;
     mentionStartIndex = -1;
+    manageMode = false;
     if (dropdownEl) {
         dropdownEl.classList.remove("mention-dropdown--visible");
     }
 }
 
 async function openDropdown() {
+    // Cancel any pending blur-triggered close — see the blur listener
+    // below. Without this, a stale close scheduled from a moment ago
+    // (e.g. focus briefly left the input) can fire ~120ms after this
+    // dropdown opens and slam it shut right away.
+    if (blurCloseTimer) {
+        clearTimeout(blurCloseTimer);
+        blurCloseTimer = null;
+    }
+    manageMode = false;
     highlightedIndex = 0;
     if (mentionType === "@") {
         try {
@@ -539,6 +621,113 @@ async function openDropdown() {
         }
     }
     renderDropdown("");
+}
+
+// ── "Manage" dropdown ────────────────────────────────────────────────
+// Opened by clicking the "Using..." bar. Unlike the add-picker above,
+// this shows ONLY the items already mentioned, each with a remove (×)
+// control — no search, no adding, nothing else clickable. Tapping
+// anywhere outside it just closes it (handled by the existing
+// document-level outside-click listener).
+let manageMode = false; // true while the manage (remove-only) list is open
+
+function openManageDropdown(type) {
+    if (blurCloseTimer) {
+        clearTimeout(blurCloseTimer);
+        blurCloseTimer = null;
+    }
+    manageMode = true;
+    mentionActive = true;
+    mentionType = type;
+    mentionStartIndex = -1;
+    highlightedIndex = -1; // nothing is keyboard-highlighted in manage mode
+    renderManageDropdown();
+    inputEl.focus();
+}
+
+function renderManageDropdown() {
+    const el = ensureDropdownEl();
+    const items = mentionType === "@" ? mentionedTabs : mentionedCollections;
+
+    el.innerHTML = "";
+
+    items.forEach((item) => {
+        const row = document.createElement("div");
+        // Deliberately NOT "mention-dropdown-item" — that class carries
+        // hover/highlight/click affordances for the add-flow. This is a
+        // plain, non-interactive row except for its remove button.
+        row.className = "mention-manage-item";
+
+        const icon = document.createElement("div");
+        icon.className = "mention-dropdown-icon";
+        if (mentionType === "@") {
+            setTabIcon(icon, item.favIconUrl);
+        } else {
+            icon.innerHTML = COLLECTION_ICON_SINGLE;
+        }
+
+        const textWrap = document.createElement("div");
+        textWrap.className = "mention-dropdown-text";
+        const titleEl = document.createElement("div");
+        titleEl.className = "mention-dropdown-title";
+        if (mentionType === "@") {
+            titleEl.textContent = item.title || "(untitled)";
+            titleEl.title = item.url || "";
+        } else {
+            titleEl.textContent = item.name;
+        }
+        textWrap.appendChild(titleEl);
+
+        const removeBtn = document.createElement("div");
+        removeBtn.className = "mention-manage-remove";
+        removeBtn.innerHTML = "&times;";
+        removeBtn.title = mentionType === "@" ? "Remove this tab" : "Remove this collection";
+        removeBtn.addEventListener("mousedown", (e) => {
+            // Only this control is interactive in manage mode — the row
+            // itself does nothing on click.
+            e.preventDefault();
+            e.stopPropagation();
+            if (mentionType === "@") {
+                removeMentionedTab(item.tabId);
+            } else {
+                removeMentionedCollection(item.id);
+            }
+        });
+
+        row.appendChild(icon);
+        row.appendChild(textWrap);
+        row.appendChild(removeBtn);
+        el.appendChild(row);
+    });
+
+    el._filteredTabs = []; // manage mode has no keyboard nav / Enter-to-pick
+    el.classList.add("mention-dropdown--visible");
+}
+
+function removeMentionedTab(tabId) {
+    const idx = mentionedTabs.findIndex(t => t.tabId === tabId);
+    if (idx === -1) return;
+    mentionedTabs.splice(idx, 1);
+    if (mentionedTabs.length) {
+        showUsingBar({ animate: true });
+        renderManageDropdown(); // refresh the open list in place
+    } else {
+        hideUsingBar(true);
+        closeDropdown();
+    }
+}
+
+function removeMentionedCollection(collectionId) {
+    const idx = mentionedCollections.findIndex(c => c.id === collectionId);
+    if (idx === -1) return;
+    mentionedCollections.splice(idx, 1);
+    if (mentionedCollections.length) {
+        showUsingCollectionBar({ animate: true });
+        renderManageDropdown();
+    } else {
+        hideUsingCollectionBar(true);
+        closeDropdown();
+    }
 }
 
 function removeMentionTextFromInput() {
@@ -631,11 +820,23 @@ function getCurrentFilterText() {
 
 inputEl.addEventListener("blur", () => {
     // Slight delay so a mousedown-selected dropdown item still registers.
-    setTimeout(() => closeDropdown(), 120);
+    blurCloseTimer = setTimeout(() => {
+        blurCloseTimer = null;
+        closeDropdown();
+    }, 120);
 });
 
 document.addEventListener("click", (e) => {
-    if (dropdownEl && !dropdownEl.contains(e.target) && e.target !== inputEl) {
+    if (!dropdownEl) return;
+    const clickedInsideDropdown = dropdownEl.contains(e.target);
+    const clickedInput = e.target === inputEl;
+    // Clicking either "Using..." bar to REOPEN the picker also bubbles to
+    // this document listener on the same tick. Without this check, the
+    // picker would open and then immediately close again from this same
+    // click. Exclude both bars from the "click outside" close.
+    const clickedUsingBar = (usingBarEl && usingBarEl.contains(e.target))
+        || (usingCollectionBarEl && usingCollectionBarEl.contains(e.target));
+    if (!clickedInsideDropdown && !clickedInput && !clickedUsingBar) {
         closeDropdown();
     }
 });

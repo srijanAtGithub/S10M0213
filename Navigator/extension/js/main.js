@@ -3,8 +3,8 @@ import { addMessage, clearMessagesUI, addContextTrail, setSending, sendBtn, appW
 import { socket, getActiveTabInfo, loadHistory, clearHistoryOnBackend, connectSocket, BACKEND_HOST } from "./api.js";
 import { attachedContexts, clearAttachedContexts } from "./features.js";
 import {
-  getMentionedTabSnippet, hasMentionedTab, clearMentionedTab, isMentionDropdownOpen,
-  hasMentionedCollection, getMentionedCollectionId, clearMentionedCollection
+  getMentionedTabSnippets, hasMentionedTab, clearMentionedTab, isMentionDropdownOpen,
+  hasMentionedCollection, getMentionedCollectionIds, clearMentionedCollection
 } from "./mentions.js";
 
 const inputEl = document.getElementById("input-box");
@@ -20,26 +20,33 @@ async function sendMessage() {
     return;
   }
 
-  const mentionSnippet = getMentionedTabSnippet();
-  const payloadSnippets = mentionSnippet
-    ? [...attachedContexts, mentionSnippet]
-    : [...attachedContexts];
+  const payloadSnippets = [...attachedContexts, ...getMentionedTabSnippets()];
 
-  // Fetch the collection text (AI needs this full content)
+  // Fetch each mentioned collection's full text (AI needs this full
+  // content). Each collection becomes its own labeled block, same as
+  // each tab does, so the model can tell sources apart when the user
+  // asks something like "where is XYZ mentioned".
   if (hasMentionedCollection()) {
-    try {
-      const res = await fetch(`http://${BACKEND_HOST}/collections/${getMentionedCollectionId()}`);
-      if (res.ok) {
-        const data = await res.json();
+    const ids = getMentionedCollectionIds();
+    const results = await Promise.allSettled(
+      ids.map(id => fetch(`http://${BACKEND_HOST}/collections/${id}`))
+    );
+    for (const result of results) {
+      if (result.status !== "fulfilled" || !result.value.ok) {
+        console.error("Failed to load collection text:", result.reason || result.value?.status);
+        continue;
+      }
+      try {
+        const data = await result.value.json();
         if (data.snippets && data.snippets.length > 0) {
           const coll_text = data.snippets.map(s => `- ${s.text}`).join("\n\n");
           payloadSnippets.push(`Collection: ${data.name}\n\n${coll_text}`);
         } else {
           payloadSnippets.push(`Collection: ${data.name}\n\n(Empty)`);
         }
+      } catch (err) {
+        console.error("Failed to parse collection response:", err);
       }
-    } catch (err) {
-      console.error("Failed to load collection text:", err);
     }
   }
 
