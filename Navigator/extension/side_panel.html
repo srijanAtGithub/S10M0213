@@ -270,13 +270,35 @@
       </div>
     </div>
 
-    <div id="messages"></div>
+    <div id="messages">
+      <div id="empty-state">
+        <div class="es-title">Ready when you are</div>
+        <div class="es-subtitle">
+          Ask about this page, organise your tabs, or drop in a snippet to get started. </br>
+
+        </div>
+
+        <div class="es-suggestions">
+          <button class="es-chip" data-prompt="What is this page about?">
+            <span>What is this page about?</span>
+          </button>
+
+          <button class="es-chip" data-prompt="What kind of questions can I ask?">
+            <span>What kind of questions can I ask?</span>
+          </button>
+
+          <button class="es-chip" data-prompt="Help me think through a problem">
+            <span>Help me think through a problem</span>
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div id="bottom-dock">
       <div id="context-shelf" class="hidden"></div>
 
       <div id="input-row">
-        <input id="input-box" type="text" placeholder="Ask anything..." autocomplete="off" />
+        <textarea id="input-box" rows="1" placeholder="Ask anything..." autocomplete="off"></textarea>
 
         <button id="send-btn" title="Send">
           <!-- send arrow icon -->

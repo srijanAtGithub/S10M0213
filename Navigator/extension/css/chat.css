@@ -33,6 +33,104 @@
     background: rgba(120, 120, 128, 0.6);
 }
 
+/* --- Empty State (shown before the first message in a fresh session) ---
+     Lives inside #messages so it scrolls/clears exactly like a message
+     would, and is removed from flow entirely (display:none) the moment
+     addMessage() fires for the first time — see ui.js. Anchored to the
+     bottom-right so it sits just above the input row and reads as the
+     start of the same right-aligned "user" column that mentions/context
+     chips and sent messages occupy — see main.js's positionEmptyState()
+     for how it nudges up when a context shelf/mention bar appears above
+     the input. */
+#empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-end;
+    text-align: left;
+    gap: 4px;
+    padding: 20px 22px 110px 10px;
+    /* Fixed padding so position remains static */
+    opacity: 0;
+    animation: emptyStateIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.15s forwards;
+    transition: padding-bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#empty-state.hidden {
+    display: none;
+}
+
+@keyframes emptyStateIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.es-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: #f2f2f7;
+    letter-spacing: 0.1px;
+}
+
+.es-subtitle {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #8e8e93;
+    margin-top: 4px;
+}
+
+.es-suggestions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    margin-top: 22px;
+    width: 100%;
+}
+
+.es-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    color: #d8d8de;
+    font-size: 14px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transition:
+        transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+        border-color 0.2s ease,
+        background-color 0.2s ease,
+        color 0.2s ease,
+        box-shadow 0.25s ease;
+}
+
+.es-chip:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.08);
+    color: #f2f2f7;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3), 0 0 14px rgba(255, 255, 255, 0.08);
+}
+
+.es-chip:active {
+    transform: translateY(0) scale(0.98);
+}
+
 /* --- Context Trail (shows what was attached to a sent message) --- */
 .msg-context-trail {
     align-self: flex-end;
@@ -186,6 +284,61 @@
     }
 }
 
+
+/* --- Message Copy Button (Floating Below Text) --- */
+.copy-btn {
+    position: absolute;
+    top: calc(100% + 2px);
+    /* Forces it to sit just below the bottom of the text block */
+    width: 22px;
+    height: 22px;
+    background: rgba(30, 30, 32, 0.95);
+    /* Clean, solid, no heavy blur overlay effect */
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    color: #a1a1aa;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    padding: 0;
+    z-index: 10;
+    /* Ensures it floats cleanly over the timeline gap */
+    transition: opacity 0.2s ease, background 0.2s ease, transform 0.1s ease;
+}
+
+.copy-btn svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* Reveal on hover over the message */
+.msg:hover .copy-btn {
+    opacity: 1;
+}
+
+/* Button interactive states */
+.copy-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #f2f2f7;
+}
+
+.copy-btn:active {
+    transform: scale(0.92);
+}
+
+/* Align left for AI, flush with the 10px text padding */
+.msg.ai .copy-btn {
+    left: 10px;
+}
+
+/* Align right for User, flush with the 10px text padding */
+.msg.user .copy-btn {
+    right: 10px;
+}
+
+
 /* --- Action Row & Inputs --- */
 #bottom-dock {
     /* Floats the whole input cluster (context shelf + input row) over
@@ -224,9 +377,19 @@
     transition: border-color 0.25s ease-out, box-shadow 0.25s ease-out;
     resize: none;
     line-height: 1.5;
+
+    resize: none;
+    /* Disables the manual drag-to-resize handle in the corner */
+    overflow-y: hidden;
+    /* Hides the scrollbar while it auto-resizes */
+    min-height: 38px;
+    /* Approximate height of 1 line */
+    max-height: 200px;
+    /* Optional: Stops growing after a certain point */
 }
 
 #input-box:focus {
+    overflow-y: auto;
     border-color: rgba(255, 255, 255, 0.35);
     box-shadow: 0 0 14px rgba(255, 255, 255, 0.22);
 }
@@ -769,6 +932,14 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Expanded state already shows the full text in the body below — the
+   truncated label here would just be a redundant "title" repeating the
+   start of the same text, so hide it once expanded. Icon/caret/close
+   stay put, only the label itself goes away. */
+.context-chip.expanded .context-chip-label {
+    visibility: hidden;
 }
 
 .context-chip-caret {

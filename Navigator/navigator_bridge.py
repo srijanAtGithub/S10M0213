@@ -4,11 +4,14 @@ navigator_bridge.py
 FastAPI server serving as the browser extension bridge.
 
 Features:
-  - Chat (WebSocket): Tab-scoped conversation state persisted to a local
-    SQLite database (ChatStore, ~/.sicily/Navigator/ChatsData/chats.db),
-    via LangGraph[cite: 3]. Sessions are created lazily and survive
-    backend restarts; they're cleared on tab closure or explicit user
-    request[cite: 3].
+  - Chat (WebSocket): Conversation state scoped by a stable, URL-derived
+    session key (see api.js:getSessionKey on the frontend) and persisted
+    to a local SQLite database (ChatStore,
+    ~/.sicily/Navigator/ChatsData/chats.db), via LangGraph[cite: 3].
+    Sessions are created lazily and survive backend restarts AND closing
+    the tab (Ctrl+Shift+T reopen restores the same history, since the key
+    is the page URL, not Chrome's ephemeral per-session tab id); they're
+    only cleared on explicit user request ("Clear chat")[cite: 3].
   - Tools (REST): Stateless endpoints for /edit-selection and /organise-tabs[cite: 3].
 
 Design:
@@ -200,6 +203,14 @@ async def get_session(tab_id: str):
     Called by the popup on open, so switching back to a tab restores
     that tab's chat instead of showing a blank window.
 
+    NOTE: despite the parameter name (kept for backward path/route
+    compatibility), the frontend now sends a stable hash of the page URL
+    here (see api.js:getSessionKey), not Chrome's tabId — tabId is
+    reassigned by Chrome every browsing session, so keying by it made
+    history unreachable after something as ordinary as closing a tab and
+    reopening it with Ctrl+Shift+T. This route itself needed no change:
+    it already treats the value as an opaque string key.
+
     Returns each row as {"role": "user"|"ai", "text": str,
     "context_snippets": list[str]} — the same shape main.js already
     expects from its startup history-replay loop (it calls
@@ -214,8 +225,11 @@ async def get_session(tab_id: str):
 @app.delete("/session/{tab_id}")
 async def delete_session(tab_id: str):
     """
-    Called by the popup's "Clear chat" button (explicit user action) and
-    by background.js when the tab closes (chrome.tabs.onRemoved).
+    Called only by the popup's explicit "Clear chat" button. background.js
+    no longer deletes on tab close (chrome.tabs.onRemoved) — closing a tab
+    isn't the user asking to clear anything, and since the key is now the
+    page URL rather than the ephemeral tabId, the same "tab" reopened via
+    Ctrl+Shift+T should still find its history intact.
     """
     existed = sessions.clear(tab_id)
     return {"status": "cleared", "existed": existed}
@@ -305,9 +319,10 @@ async def websocket_endpoint(websocket: WebSocket, tab_id: str):
     except WebSocketDisconnect:
         # The popup closing disconnects this socket, but the tab itself is
         # very likely still open — so we deliberately do NOT clear the
-        # session here. Only DELETE /session/{tab_id} clears it (explicit
-        # "Clear chat", or background.js reacting to the tab actually
-        # closing).
+        # session here. Only DELETE /session/{tab_id} clears it, and only
+        # in response to the user's explicit "Clear chat" action —
+        # background.js no longer clears on tab close (see note on
+        # delete_session above).
         log.info("Extension disconnected", tab_id=tab_id)
     except Exception as e:
         log.exception("Bridge error", tab_id=tab_id)

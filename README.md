@@ -2,7 +2,7 @@
 
 A production-grade, cost-efficient, and crash-resilient AI runtime powered by **LangGraph** and **Multi-Transport MCP**. Sicily runs in three modes: as a persistent personal **Agent** operating through an asynchronous Telegram interface, as a **Cowork** local terminal assistant with sandboxed access to your files, and as **Navigator**, a browser extension that brings Sicily's writing and research tools to any web page.
 
-> **[→ JUMP TO 'HOW TO USE'](How%20to%20Use.md)**
+> **[→ JUMP TO 'HOW TO USE'](How%20To%20Use.md)**
 
 Sicily is built on four principles:
 
@@ -70,9 +70,7 @@ Navigator is a Chrome extension that brings Sicily to any web page, backed by a 
 
 https://github.com/user-attachments/assets/97de426d-9e4c-41e9-82ce-99ffb57cc9f1
 
-**Side panel:** a persistent panel with its own set of reading and research tools —
-
-A persistent side panel for chatting, summarising, and organising as you browse — one-click page summaries, one-click tab organisation, and a "find more like this" for surfacing similar pages, plus a reading list to save pages for later.
+**Side panel:** A persistent panel with its own set of reading and research tools used for chatting, summarising, and organising as you browse — one-click page summaries, one-click tab organisation, and a "find more like this" for surfacing similar pages, plus a reading list to save pages for later.
 
 https://github.com/user-attachments/assets/5f244172-a61f-4287-be19-9bbbb9c7a0ce
 
@@ -84,7 +82,7 @@ https://github.com/user-attachments/assets/2216e3e7-65d6-4e80-b983-561251bbfc70
 
 ## Architecture Overview
 
-*(Sicily Agent's architecture is shown below — Cowork and Navigator are simpler by design and aren't diagrammed separately.)*
+_(Sicily Agent's architecture is shown below — Cowork and Navigator are simpler by design and aren't diagrammed separately.)_
 
 <img src="Media/main_system_workflow.svg" alt="Main System Workflow" width="75%">
 
@@ -174,4 +172,4 @@ It walks backward through the message history to find a safe cut point — speci
 
 ---
 
-For installation, setup, configuration, and the full CLI reference, see **[How to Use.md](How%20to%20Use.md)**.
+For installation, setup, configuration, and the full CLI reference, see **[How to Use.md](How%20To%20Use.md)**.

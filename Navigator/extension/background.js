@@ -83,10 +83,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // Important: keeps the channel open for async response
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => {
-  // Best-effort: if the backend isn't running, there's nothing to clean up
-  // anyway (in-memory sessions die with the server), so just log and move on.
-  fetch(`http://${BACKEND_HOST}/session/${tabId}`, { method: "DELETE" }).catch((err) => {
-    console.log("[Sicily Navigator] couldn't clear session for closed tab", tabId, err);
-  });
-});
+// NOTE: we deliberately do NOT delete the backend session when a tab
+// closes. Sessions are keyed by a hash of the page URL (see
+// api.js:getSessionKey), not by Chrome's tabId — tabId is reassigned by
+// Chrome on every browsing session, so it can't identify "the same tab"
+// across a close/reopen anyway. Deleting on close used to silently wipe
+// history the moment a tab was closed, including the extremely common
+// "accidentally closed it, Ctrl+Shift+T to bring it right back" case.
+// Clearing history is now only ever the user's explicit "Clear" button.

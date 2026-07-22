@@ -1,15 +1,17 @@
 import { NotificationService } from "./notifications.js";
 import { addMessage, clearMessagesUI, addContextTrail, setSending, sendBtn, appWrap } from "./ui.js";
-import { socket, getActiveTabInfo, loadHistory, clearHistoryOnBackend, connectSocket, BACKEND_HOST } from "./api.js";
+import { socket, getActiveTabInfo, loadHistory, clearHistoryOnBackend, connectSocket, getSessionKey, BACKEND_HOST } from "./api.js";
 import { attachedContexts, clearAttachedContexts } from "./features.js";
 import {
   getMentionedTabSnippets, hasMentionedTab, clearMentionedTab, isMentionDropdownOpen,
-  hasMentionedCollection, getMentionedCollectionIds, clearMentionedCollection
+  hasMentionedCollection, getMentionedCollectionIds, clearMentionedCollection,
+  autoMentionActiveTab
 } from "./mentions.js";
 
 const inputEl = document.getElementById("input-box");
 const clearBtn = document.getElementById("clear-btn");
 let currentTab = { id: null, url: "", title: "" };
+let currentSessionKey = null;
 
 async function sendMessage() {
   const text = inputEl.value.trim();
@@ -83,8 +85,8 @@ async function sendMessage() {
 }
 
 async function handleClear() {
-  if (currentTab.id == null) return;
-  const ok = await clearHistoryOnBackend(currentTab.id);
+  if (currentSessionKey == null) return;
+  const ok = await clearHistoryOnBackend(currentSessionKey);
   if (ok) {
     clearMessagesUI();
     NotificationService.show("Conversation cleared.");
@@ -93,10 +95,46 @@ async function handleClear() {
 
 sendBtn.addEventListener("click", sendMessage);
 clearBtn.addEventListener("click", handleClear);
+
+// Empty-state suggestion chips: these are generic conversation starters
+// (deliberately distinct from the Quick Actions menu items), so just
+// drop their text into the input and send like a normal typed message.
+document.querySelectorAll(".es-chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    const prompt = chip.dataset.prompt;
+    if (!prompt) return;
+    inputEl.value = prompt;
+    sendMessage();
+  });
+});
+
+// Auto-resize the textarea as the user types
+inputEl.addEventListener("input", function () {
+  this.style.height = 'auto';
+
+  // Add 2px to account for the 1px top and 1px bottom borders
+  this.style.height = (this.scrollHeight + 2) + 'px';
+
+  // Only show the scrollbar if it hits your max-height (150px)
+  if (this.scrollHeight >= 150) {
+    this.style.overflowY = 'auto';
+  } else {
+    this.style.overflowY = 'hidden';
+  }
+});
+
+// Handle standard chat Enter vs Shift+Enter behavior
 inputEl.addEventListener("keydown", (e) => {
-  // Don't send the message if Enter was meant to pick a highlighted
-  // tab in the @-mention dropdown instead.
-  if (e.key === "Enter" && !isMentionDropdownOpen()) sendMessage();
+  if (e.key === "Enter" && !isMentionDropdownOpen()) {
+    if (!e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+
+      // Reset the box back to default after sending
+      inputEl.style.height = 'auto';
+      inputEl.style.overflowY = 'hidden';
+    }
+  }
 });
 
 (async () => {
@@ -109,8 +147,20 @@ inputEl.addEventListener("keydown", (e) => {
     addMessage("Couldn't identify the active tab.", "system");
     return;
   }
+  currentSessionKey = getSessionKey(currentTab.url);
 
-  const history = await loadHistory(currentTab.id);
+  const history = await loadHistory(currentSessionKey);
+
+  if (history.length === 0) {
+    // Fresh conversation for this page — default to "I want to ask about
+    // this page" instead of making the user @-mention it themselves.
+    // Skipped when history exists (session persists across tab close/
+    // reopen and backend restarts now) so reopening the panel on an
+    // ongoing conversation doesn't silently re-attach the full page text
+    // as a brand new mention on top of it.
+    autoMentionActiveTab(currentTab);
+  }
+
   for (const m of history) {
     if (m.role === "user" && Array.isArray(m.context_snippets) && m.context_snippets.length) {
       addContextTrail(m.context_snippets);
@@ -118,6 +168,6 @@ inputEl.addEventListener("keydown", (e) => {
     addMessage(m.text, m.role === "user" ? "user" : "ai");
   }
 
-  connectSocket(currentTab.id);
+  connectSocket(currentSessionKey);
   inputEl.focus();
 })();

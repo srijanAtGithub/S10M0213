@@ -42,10 +42,20 @@
     align-items: center;
     justify-content: center;
 
-    /* CRUCIAL: Forces the zone to explicitly capture pointer interactions */
-    pointer-events: auto;
+    /* Inactive by default: giving it an explicit value (even "none")
+       means it never falls back to silently inheriting whatever the
+       parent overlay's pointer-events happens to be. */
+    pointer-events: none;
 
     transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* CRUCIAL: Only capture pointer interactions (and show the copy cursor)
+   while the overlay is actually active/visible. Without this gate the
+   zones sit on top of the side panel at all times — invisible, but
+   still eating hover/scroll/selection and showing the "+" cursor. */
+#drag-overlay.active .drop-zone {
+    pointer-events: auto;
     cursor: copy;
 }
 
@@ -442,7 +452,8 @@
 #summary-overlay .organise-card {
     max-width: 100%;
     width: 550px;
-    flex: 1;
+    flex: 0 1 auto;
+    max-height: 85vh;
     min-height: 0;
 }
 
