@@ -95,10 +95,34 @@ async function handleClear() {
 
 sendBtn.addEventListener("click", sendMessage);
 clearBtn.addEventListener("click", handleClear);
+
+// Auto-resize the textarea as the user types
+inputEl.addEventListener("input", function() {
+  this.style.height = 'auto'; 
+  
+  // Add 2px to account for the 1px top and 1px bottom borders
+  this.style.height = (this.scrollHeight + 2) + 'px'; 
+  
+  // Only show the scrollbar if it hits your max-height (150px)
+  if (this.scrollHeight >= 150) {
+      this.style.overflowY = 'auto';
+  } else {
+      this.style.overflowY = 'hidden';
+  }
+});
+
+// Handle standard chat Enter vs Shift+Enter behavior
 inputEl.addEventListener("keydown", (e) => {
-  // Don't send the message if Enter was meant to pick a highlighted
-  // tab in the @-mention dropdown instead.
-  if (e.key === "Enter" && !isMentionDropdownOpen()) sendMessage();
+  if (e.key === "Enter" && !isMentionDropdownOpen()) {
+    if (!e.shiftKey) {
+      e.preventDefault(); 
+      sendMessage();
+      
+      // Reset the box back to default after sending
+      inputEl.style.height = 'auto'; 
+      inputEl.style.overflowY = 'hidden';
+    }
+  }
 });
 
 (async () => {

@@ -276,9 +276,15 @@
     transition: border-color 0.25s ease-out, box-shadow 0.25s ease-out;
     resize: none;
     line-height: 1.5;
+
+    resize: none; /* Disables the manual drag-to-resize handle in the corner */
+    overflow-y: hidden; /* Hides the scrollbar while it auto-resizes */
+    min-height: 38px; /* Approximate height of 1 line */
+    max-height: 200px; /* Optional: Stops growing after a certain point */
 }
 
 #input-box:focus {
+    overflow-y: auto;
     border-color: rgba(255, 255, 255, 0.35);
     box-shadow: 0 0 14px rgba(255, 255, 255, 0.22);
 }
