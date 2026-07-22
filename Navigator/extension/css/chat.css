@@ -186,6 +186,58 @@
     }
 }
 
+
+/* --- Message Copy Button (Floating Below Text) --- */
+.copy-btn {
+    position: absolute;
+    top: calc(100% + 2px); /* Forces it to sit just below the bottom of the text block */
+    width: 22px;
+    height: 22px;
+    background: rgba(30, 30, 32, 0.95); /* Clean, solid, no heavy blur overlay effect */
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    color: #a1a1aa;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    padding: 0;
+    z-index: 10; /* Ensures it floats cleanly over the timeline gap */
+    transition: opacity 0.2s ease, background 0.2s ease, transform 0.1s ease;
+}
+
+.copy-btn svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* Reveal on hover over the message */
+.msg:hover .copy-btn {
+    opacity: 1;
+}
+
+/* Button interactive states */
+.copy-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #f2f2f7;
+}
+
+.copy-btn:active {
+    transform: scale(0.92);
+}
+
+/* Align left for AI, flush with the 10px text padding */
+.msg.ai .copy-btn {
+    left: 10px;
+}
+
+/* Align right for User, flush with the 10px text padding */
+.msg.user .copy-btn {
+    right: 10px;
+}
+
+
 /* --- Action Row & Inputs --- */
 #bottom-dock {
     /* Floats the whole input cluster (context shelf + input row) over

@@ -10,7 +10,38 @@ export function addMessage(text, role) {
   const el = document.createElement("div");
   el.className = `msg ${role}`;
   el.textContent = text;
+
+  // Create the copy button
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "copy-btn";
+  copyBtn.title = "Copy text";
+  
+  // Default Copy Icon
+  const copyIcon = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M8 4V16C8 17.1046 8.89543 18 10 18H20C21.1046 18 22 17.1046 22 16V4C22 2.89543 21.1046 2 20 2H10C8.89543 2 8 2.89543 8 4Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+    <path d="M16 18V20C16 21.1046 15.1046 22 14 22H4C2.89543 22 2 21.1046 2 20V8C2 6.89543 2.89543 6 4 6H6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+  
+  // Success Checkmark Icon
+  const checkIcon = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M20 6L9 17L4 12" stroke="#34c759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+
+  copyBtn.innerHTML = copyIcon;
+
+  // Handle clipboard functionality
+  copyBtn.addEventListener("click", () => {
+    navigator.clipboard.writeText(text).then(() => {
+      copyBtn.innerHTML = checkIcon;
+      setTimeout(() => {
+        copyBtn.innerHTML = copyIcon;
+      }, 1500);
+    }).catch(err => console.error("Failed to copy text:", err));
+  });
+
+  el.appendChild(copyBtn);
   messagesEl.appendChild(el);
+  
   requestAnimationFrame(() => {
     messagesEl.scrollTop = messagesEl.scrollHeight;
   });
