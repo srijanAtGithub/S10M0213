@@ -96,18 +96,30 @@ async function handleClear() {
 sendBtn.addEventListener("click", sendMessage);
 clearBtn.addEventListener("click", handleClear);
 
+// Empty-state suggestion chips: these are generic conversation starters
+// (deliberately distinct from the Quick Actions menu items), so just
+// drop their text into the input and send like a normal typed message.
+document.querySelectorAll(".es-chip").forEach((chip) => {
+  chip.addEventListener("click", () => {
+    const prompt = chip.dataset.prompt;
+    if (!prompt) return;
+    inputEl.value = prompt;
+    sendMessage();
+  });
+});
+
 // Auto-resize the textarea as the user types
-inputEl.addEventListener("input", function() {
-  this.style.height = 'auto'; 
-  
+inputEl.addEventListener("input", function () {
+  this.style.height = 'auto';
+
   // Add 2px to account for the 1px top and 1px bottom borders
-  this.style.height = (this.scrollHeight + 2) + 'px'; 
-  
+  this.style.height = (this.scrollHeight + 2) + 'px';
+
   // Only show the scrollbar if it hits your max-height (150px)
   if (this.scrollHeight >= 150) {
-      this.style.overflowY = 'auto';
+    this.style.overflowY = 'auto';
   } else {
-      this.style.overflowY = 'hidden';
+    this.style.overflowY = 'hidden';
   }
 });
 
@@ -115,11 +127,11 @@ inputEl.addEventListener("input", function() {
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !isMentionDropdownOpen()) {
     if (!e.shiftKey) {
-      e.preventDefault(); 
+      e.preventDefault();
       sendMessage();
-      
+
       // Reset the box back to default after sending
-      inputEl.style.height = 'auto'; 
+      inputEl.style.height = 'auto';
       inputEl.style.overflowY = 'hidden';
     }
   }
