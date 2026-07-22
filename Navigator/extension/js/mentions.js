@@ -246,50 +246,88 @@ async function extractFullPageText(tabId) {
     const injectionResult = await chrome.scripting.executeScript({
         target: { tabId },
         func: () => {
-            // IMPORTANT: .innerText is layout-dependent — it needs computed
-            // styles/visibility/line boxes to know what counts as "visible
-            // text". A detached clone (document.cloneNode(true)) has no
-            // layout at all, so on ordinary static pages .innerText on the
-            // clone happens to still work "well enough", but on heavy
-            // client-rendered SPAs like Google Docs or Overleaf — where the
-            // real content lives behind virtualization / display:none
-            // toggling / canvas-backed editor layers — a detached clone's
-            // .innerText comes back empty or near-empty every single time.
-            // That's why extraction failed consistently on those specific
-            // sites rather than flakily.
-            //
-            // Fix: walk the LIVE document instead of a detached clone, then
-            // restore whatever we removed so the real page is never left
-            // mutated (executeScript's isolated world only isolates JS
-            // globals — DOM mutations to the real page ARE visible to it).
-            const tagsToRemove = ['nav', 'footer', 'aside', 'script', 'style', 'noscript', 'header'];
-            const removed = [];
+            // 1. Only remove non-content execution/style tags. 
+            // DO NOT remove <header> or <aside>—Jira & Bitbucket store key sidebars there!
+            const IGNORED_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG']);
 
-            tagsToRemove.forEach(tag => {
-                document.body?.querySelectorAll(tag).forEach(el => {
-                    removed.push({ el, parent: el.parentNode, next: el.nextSibling });
-                    el.parentNode?.removeChild(el);
-                });
-            });
+            function extractNodeText(node) {
+                if (!node) return '';
 
-            let text = "";
-            try {
-                // No truncation here — this is the raw content the model
-                // should reason over directly, not a summarisation input.
-                text = document.body ? document.body.innerText : "";
-            } finally {
-                // Restore the page exactly as it was, in original order.
-                for (const { el, parent, next } of removed) {
-                    if (!parent) continue;
-                    if (next && next.parentNode === parent) {
-                        parent.insertBefore(el, next);
-                    } else {
-                        parent.appendChild(el);
-                    }
+                // Skip non-content tags
+                if (node.nodeType === Node.ELEMENT_NODE && IGNORED_TAGS.has(node.tagName)) {
+                    return '';
                 }
+
+                // Plain Text Nodes
+                if (node.nodeType === Node.TEXT_NODE) {
+                    return node.textContent || '';
+                }
+
+                // Element Nodes
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const el = node;
+
+                    // Skip hidden elements
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden') {
+                        return '';
+                    }
+
+                    let pieces = [];
+
+                    // Extract missing attributes often used in Jira/Bitbucket for Assignees/Reviewers/Avatars
+                    const ariaLabel = el.getAttribute('aria-label');
+                    const alt = el.getAttribute('alt');
+                    const title = el.getAttribute('title');
+
+                    // Capture Avatar images (e.g., <img alt="John Doe" />)
+                    if (el.tagName === 'IMG' && alt) {
+                        pieces.push(` [Image: ${alt}] `);
+                    }
+
+                    // Capture dynamic badges / button labels
+                    if (ariaLabel && !el.innerText?.includes(ariaLabel)) {
+                        pieces.push(` [${ariaLabel}] `);
+                    } else if (title && !el.innerText?.includes(title)) {
+                        pieces.push(` [${title}] `);
+                    }
+
+                    // Walk Light DOM children
+                    for (const child of el.childNodes) {
+                        pieces.push(extractNodeText(child));
+                    }
+
+                    // Walk Shadow DOM children (Critical for Atlassian/Atlaskit components!)
+                    if (el.shadowRoot) {
+                        for (const shadowChild of el.shadowRoot.childNodes) {
+                            pieces.push(extractNodeText(shadowChild));
+                        }
+                    }
+
+                    // Add formatting spacing for block-level elements
+                    const isBlock = style.display === 'block' ||
+                        style.display === 'flex' ||
+                        style.display === 'grid' ||
+                        ['P', 'DIV', 'TR', 'SECTION', 'MAIN', 'ASIDE', 'HEADER'].includes(el.tagName);
+
+                    let result = pieces.join('');
+                    if (isBlock && result.trim()) {
+                        result = '\n' + result + '\n';
+                    }
+                    return result;
+                }
+
+                return '';
             }
 
-            return text;
+            const rawText = extractNodeText(document.body);
+
+            // Clean up multi-line white spaces without losing structure
+            return rawText
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0)
+                .join('\n');
         }
     });
     return injectionResult[0]?.result || "";
