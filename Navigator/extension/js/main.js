@@ -1,6 +1,6 @@
 import { NotificationService } from "./notifications.js";
 import { addMessage, clearMessagesUI, addContextTrail, setSending, sendBtn, appWrap } from "./ui.js";
-import { socket, getActiveTabInfo, loadHistory, clearHistoryOnBackend, connectSocket, BACKEND_HOST } from "./api.js";
+import { socket, getActiveTabInfo, loadHistory, clearHistoryOnBackend, connectSocket, getSessionKey, BACKEND_HOST } from "./api.js";
 import { attachedContexts, clearAttachedContexts } from "./features.js";
 import {
   getMentionedTabSnippets, hasMentionedTab, clearMentionedTab, isMentionDropdownOpen,
@@ -11,6 +11,7 @@ import {
 const inputEl = document.getElementById("input-box");
 const clearBtn = document.getElementById("clear-btn");
 let currentTab = { id: null, url: "", title: "" };
+let currentSessionKey = null;
 
 async function sendMessage() {
   const text = inputEl.value.trim();
@@ -84,8 +85,8 @@ async function sendMessage() {
 }
 
 async function handleClear() {
-  if (currentTab.id == null) return;
-  const ok = await clearHistoryOnBackend(currentTab.id);
+  if (currentSessionKey == null) return;
+  const ok = await clearHistoryOnBackend(currentSessionKey);
   if (ok) {
     clearMessagesUI();
     NotificationService.show("Conversation cleared.");
@@ -110,14 +111,20 @@ inputEl.addEventListener("keydown", (e) => {
     addMessage("Couldn't identify the active tab.", "system");
     return;
   }
+  currentSessionKey = getSessionKey(currentTab.url);
 
-  // Default behavior: whoever opens the side panel almost always wants to
-  // ask about the page they're already on, so attach it as context
-  // up front instead of making them @-mention it themselves. Fire-and-forget
-  // — history load below doesn't need to wait on this.
-  autoMentionActiveTab(currentTab);
+  const history = await loadHistory(currentSessionKey);
 
-  const history = await loadHistory(currentTab.id);
+  if (history.length === 0) {
+    // Fresh conversation for this page — default to "I want to ask about
+    // this page" instead of making the user @-mention it themselves.
+    // Skipped when history exists (session persists across tab close/
+    // reopen and backend restarts now) so reopening the panel on an
+    // ongoing conversation doesn't silently re-attach the full page text
+    // as a brand new mention on top of it.
+    autoMentionActiveTab(currentTab);
+  }
+
   for (const m of history) {
     if (m.role === "user" && Array.isArray(m.context_snippets) && m.context_snippets.length) {
       addContextTrail(m.context_snippets);
@@ -125,6 +132,6 @@ inputEl.addEventListener("keydown", (e) => {
     addMessage(m.text, m.role === "user" ? "user" : "ai");
   }
 
-  connectSocket(currentTab.id);
+  connectSocket(currentSessionKey);
   inputEl.focus();
 })();
