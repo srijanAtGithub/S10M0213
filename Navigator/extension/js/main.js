@@ -4,7 +4,8 @@ import { socket, getActiveTabInfo, loadHistory, clearHistoryOnBackend, connectSo
 import { attachedContexts, clearAttachedContexts } from "./features.js";
 import {
   getMentionedTabSnippets, hasMentionedTab, clearMentionedTab, isMentionDropdownOpen,
-  hasMentionedCollection, getMentionedCollectionIds, clearMentionedCollection
+  hasMentionedCollection, getMentionedCollectionIds, clearMentionedCollection,
+  autoMentionActiveTab
 } from "./mentions.js";
 
 const inputEl = document.getElementById("input-box");
@@ -109,6 +110,12 @@ inputEl.addEventListener("keydown", (e) => {
     addMessage("Couldn't identify the active tab.", "system");
     return;
   }
+
+  // Default behavior: whoever opens the side panel almost always wants to
+  // ask about the page they're already on, so attach it as context
+  // up front instead of making them @-mention it themselves. Fire-and-forget
+  // — history load below doesn't need to wait on this.
+  autoMentionActiveTab(currentTab);
 
   const history = await loadHistory(currentTab.id);
   for (const m of history) {

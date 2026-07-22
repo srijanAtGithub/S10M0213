@@ -442,7 +442,8 @@
 #summary-overlay .organise-card {
     max-width: 100%;
     width: 550px;
-    flex: 1;
+    flex: 0 1 auto;
+    max-height: 85vh;
     min-height: 0;
 }
 

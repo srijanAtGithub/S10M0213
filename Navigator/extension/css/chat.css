@@ -771,6 +771,14 @@
     text-overflow: ellipsis;
 }
 
+/* Expanded state already shows the full text in the body below — the
+   truncated label here would just be a redundant "title" repeating the
+   start of the same text, so hide it once expanded. Icon/caret/close
+   stay put, only the label itself goes away. */
+.context-chip.expanded .context-chip-label {
+    visibility: hidden;
+}
+
 .context-chip-caret {
     flex-shrink: 0;
     width: 9px;

@@ -148,7 +148,7 @@ def config():
 def run():
     """Start the Sicily agent."""
     ensure_initialized()
-    from main import main
+    from Agent.main import main
     main()
 
 
@@ -261,7 +261,7 @@ def navigator(do_start, do_stop, do_status, _foreground):
         return
 
     if do_start:
-        ensure_initialized(required_keys=["OPENAI_API_KEY"])
+        ensure_initialized(required_keys=["OPENAI_API_KEY", "TAVILY_API_KEY"])
 
         existing_pid = _read_navigator_pid()
         if existing_pid and _navigator_pid_running(existing_pid):

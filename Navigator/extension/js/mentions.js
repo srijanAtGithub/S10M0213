@@ -127,7 +127,10 @@ function ensureUsingBarEl() {
     usingBarEl.appendChild(label);
     usingBarEl.appendChild(closeBtn);
 
-    usingBarEl.addEventListener("click", () => openManageDropdown("@"));
+    usingBarEl.addEventListener("click", () => {
+        if (mentionedTabs.length <= 1) return; // nothing to manage in a list of one
+        openManageDropdown("@");
+    });
 
     // Insert directly above #input-row, inside the same floating dock, so
     // it shares the glass cluster and pushes the input row down naturally.
@@ -387,6 +390,42 @@ async function selectTabForMention(tab) {
     }
 }
 
+/**
+ * Auto-attach the current tab as context on side-panel open, so the user
+ * doesn't have to manually @-mention the page they're already looking at
+ * — that's the overwhelmingly common intent ("ask questions about this
+ * page"). Takes the same plain {id, url, title, favIconUrl} shape that
+ * getActiveTabInfo() in api.js already returns (main.js passes it
+ * straight through), so no chrome.tabs.query call is needed here.
+ *
+ * Reuses the exact same extraction path as a manual @ pick, just without
+ * touching the input box / dropdown (there's no mention text to remove
+ * since the user didn't type anything).
+ */
+export async function autoMentionActiveTab(tab) {
+    if (!tab || tab.id == null) return;
+    if (!isScriptableTab(tab)) return; // e.g. chrome:// pages — nothing to extract
+    if (mentionedTabs.some(t => t.tabId === tab.id)) return; // already mentioned somehow
+
+    try {
+        const content = await extractFullPageTextWithRetry(tab);
+        if (!content) return; // silent — this is a convenience default, not a user action to error on
+
+        mentionedTabs.push({
+            tabId: tab.id,
+            title: tab.title || tab.url || "Untitled tab",
+            url: tab.url || "",
+            favIconUrl: tab.favIconUrl || "",
+            content,
+        });
+        showUsingBar({ animate: false }); // no entrance animation — it should just already be there
+    } catch (err) {
+        // Best-effort only. A silent failure here just means the user falls
+        // back to manually @-mentioning the tab, same as before this feature.
+        console.log("[Sicily Navigator] auto-mention of active tab failed", err);
+    }
+}
+
 // ── "Using: collection" bar ──────────────────────────────────────────
 // Single collection -> list-glyph icon + "Using Collection: <name>"
 // 2+ collections     -> a single "stacked lists" glyph + "Using Multiple
@@ -434,7 +473,10 @@ function ensureUsingCollectionBarEl() {
     usingCollectionBarEl.appendChild(label);
     usingCollectionBarEl.appendChild(closeBtn);
 
-    usingCollectionBarEl.addEventListener("click", () => openManageDropdown("#"));
+    usingCollectionBarEl.addEventListener("click", () => {
+        if (mentionedCollections.length <= 1) return; // nothing to manage in a list of one
+        openManageDropdown("#");
+    });
 
     bottomDock.insertBefore(usingCollectionBarEl, inputRow);
     return usingCollectionBarEl;
