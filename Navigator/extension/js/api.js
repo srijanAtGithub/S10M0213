@@ -9,9 +9,40 @@ export async function getActiveTabInfo() {
   return { id: tab.id, url: tab.url || "", title: tab.title || "" };
 }
 
-export async function loadHistory(tabId) {
+// ── Stable session identity ──────────────────────────────────────────
+// Chrome's tabId is NOT a persistent identity — it's an in-memory integer
+// that Chrome reassigns per browsing session. Closing a tab and reopening
+// it with Ctrl+Shift+T restores "the same tab" from the user's point of
+// view, but Chrome hands it a brand new tabId, so keying sessions by
+// tabId makes that history unreachable even though nothing was ever
+// meant to be cleared.
+//
+// The URL is the only thing that's actually stable across that close/
+// reopen round-trip, so session identity (history load/clear, and the
+// websocket) is keyed off a hash of the URL instead. This also matches
+// the already-accepted behavior that navigating to a genuinely different
+// URL starts a fresh conversation (same as e.g. Gemini's side panel) —
+// it's the same key, just no longer thrown away by an incidental tab
+// close.
+//
+// Not cryptographic — just enough spread to use as a URL-safe path
+// segment key. Strips the fragment (#...) so in-page anchor jumps on the
+// same document don't fragment the session.
+export function getSessionKey(url) {
+  if (!url) return "no-url";
+  const withoutFragment = url.split("#")[0];
+  let hash = 0;
+  for (let i = 0; i < withoutFragment.length; i++) {
+    hash = (Math.imul(31, hash) + withoutFragment.charCodeAt(i)) | 0;
+  }
+  // Base36, unsigned — keeps it short and safe to drop straight into a
+  // REST path / ws URL segment.
+  return (hash >>> 0).toString(36);
+}
+
+export async function loadHistory(sessionKey) {
   try {
-    const res = await fetch(`http://${BACKEND_HOST}/session/${tabId}`);
+    const res = await fetch(`http://${BACKEND_HOST}/session/${sessionKey}`);
     if (!res.ok) throw new Error(`status ${res.status}`);
     const data = await res.json();
     return data.messages || [];
@@ -21,9 +52,9 @@ export async function loadHistory(tabId) {
   }
 }
 
-export async function clearHistoryOnBackend(tabId) {
+export async function clearHistoryOnBackend(sessionKey) {
   try {
-    await fetch(`http://${BACKEND_HOST}/session/${tabId}`, { method: "DELETE" });
+    await fetch(`http://${BACKEND_HOST}/session/${sessionKey}`, { method: "DELETE" });
     return true;
   } catch (err) {
     addMessage("Couldn't clear history — is navigator_bridge.py running?", "system");
@@ -31,9 +62,9 @@ export async function clearHistoryOnBackend(tabId) {
   }
 }
 
-export function connectSocket(tabId) {
+export function connectSocket(sessionKey) {
   setStatus("connecting");
-  socket = new WebSocket(`ws://${BACKEND_HOST}/ws/${tabId}`);
+  socket = new WebSocket(`ws://${BACKEND_HOST}/ws/${sessionKey}`);
 
   socket.onopen = () => {
     setStatus("connected");

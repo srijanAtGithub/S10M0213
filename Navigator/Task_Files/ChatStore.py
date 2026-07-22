@@ -1,7 +1,8 @@
 """
 ChatStore.py
 ------------
-Persistent, tab-scoped conversation history for the Navigator chat.
+Persistent conversation history for the Navigator chat, keyed by a
+stable session key.
 
 Replaces the old in-memory SessionStore in navigator_bridge.py. Same
 public shape (get / set / clear / __len__) so the WebSocket handler
@@ -10,10 +11,18 @@ the context_snippets attached to that turn (drag-dropped text, "Add to
 Chat" summaries, @-mentioned tab content) survive:
 
   - a backend restart (uvicorn reload, machine reboot, crash)
-  - closing and reopening the exact same tab (Ctrl+Shift+T), since
-    Chrome's session-restore reassigns a NEW tab id in that case, but
-    the popup's currentTab.id at load time is whatever Chrome now
-    reports — see the note on tab-id stability below.
+  - closing and reopening the exact same tab (Ctrl+Shift+T)
+
+The `tab_id` column name is kept for backward compatibility (schema,
+route params, and this class's method signatures all still say
+"tab_id"), but the frontend now sends a stable hash of the page URL
+here (see api.js:getSessionKey), not Chrome's actual tabId. Chrome
+reassigns tabId on every browsing session — including a plain
+Ctrl+Shift+T reopen of a just-closed tab — so keying by it made history
+for that "same" tab unreachable the moment Chrome handed out a new id.
+This class itself needed zero changes for that fix: it always treated
+this column as an opaque TEXT key, never cast to int or compared
+numerically, so any string works equally well.
 
 Storage lives at:  ~/.sicily/Navigator/ChatsData/chats.db
 (SICILY_HOME / "Navigator" / "ChatsData" / "chats.db")
